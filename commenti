@@ -1,0 +1,18 @@
+
+
+T = T_lowerbound
+
+while True:
+    build_or_update_model(T)
+
+    solution = solve_MAPF(T)
+
+    if solution exists:
+        return solution, T
+
+    T += 1
+
+
+A star efficientato: https://www.ijcai.org/proceedings/2020/0565.pdf
+https://github.com/GavinPHR/Multi-Agent-Path-Finding/blob/master/cbs_mapf/planner.py
+https://github.com/GavinPHR/Space-Time-AStar/blob/master/stastar/neighbour_table.py

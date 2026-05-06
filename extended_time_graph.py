@@ -1,5 +1,5 @@
-from .time_graph_builder import time_expansion_graph_with_constr
 from Network_graph import NetworkGraph
+from graph_utils.time_graph_builder import time_expansion_graph_with_constr
 
 
 class TimeExpandedGraph:
@@ -20,7 +20,7 @@ class TimeExpandedGraph:
             edge_constraints: set of (src, dst) expanded edge pairs that cannot be used in time extended graph (if no costraints -> empty set)
         """
         self.G_original = G
-        self.T = T 
+        self.T = T + 3
         self.vertex_constraints = vertex_constraints if vertex_constraints is not None else set()
         self.edge_constraints = edge_constraints if edge_constraints is not None else set()
         # build the time-expanded graph and store the mapping original_id -> list of expanded ids

@@ -1,6 +1,6 @@
-import heapq   
-from Network_graph import NetworkGraph
+import heapq
 import math
+from Network_graph import NetworkGraph
 
 
 def reconstruct_path(node_to_predecessor: dict, current: int) -> list:

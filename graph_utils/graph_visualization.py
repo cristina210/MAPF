@@ -1,53 +1,9 @@
-from Network_graph import NetworkGraph
 import matplotlib.pyplot as plt
 import networkx as nx
-
-def make_grid_graph(rows: int, cols: int, step: float = 1.0) -> NetworkGraph:
-    """
-    Builds a rows for cols grid graph where each node holds (x, y) coordinates
-    and every cell is connected to its right and upper neighbours via
-    bidirectional edges.
-
-    Args:
-        rows:  number of rows in the grid
-        cols:  number of columns in the grid
-        step:  distance between adjacent nodes (default 1.0, standard in MAPF)
-
-    Returns:
-        G: the constructed NetworkGraph
-    """
-    G = NetworkGraph()
-
-    # --- Node creation ---
-    # Each node gets a linear id  nid = r*cols + c  and spatial attributes x, y
-    for r in range(rows):
-        for c in range(cols):
-            nid = r * cols + c
-            attrs = {"x": float(c * step), "y": float(r * step)}
-            G.add_node(nid, **attrs)
-
-    # --- Edge creation ---
-    # For every cell we add at most two bidirectional edges:
-    #   • horizontal: current node ↔ right neighbour
-    #   • vertical:   current node ↔ upper neighbour
-    for r in range(rows):
-        for c in range(cols):
-            nid = r * cols + c
-
-            # Horizontal edge (only if the next column exists)
-            if c + 1 < cols:
-                right = r * cols + (c + 1)
-                G.add_edge(nid, right, weight=step)
-                G.add_edge(right, nid, weight=step)
-
-            # Vertical edge (only if the next row exists)
-            if r + 1 < rows:
-                up = (r + 1) * cols + c
-                G.add_edge(nid, up, weight=step)
-                G.add_edge(up, nid, weight=step)
-
-    return G
-
+import matplotlib.animation as animation
+import networkx as nx
+from Network_graph import NetworkGraph
+from MAPF_algorithm.plan_result import PlanResult
 
 def print_grid_on_terminal(G: NetworkGraph) -> None:
     """
@@ -128,7 +84,7 @@ def print_expanded_graph(G_expanded: NetworkGraph) -> None:
         # Show the expanded id, the original graph id, and the timestep
         print(f"  {nid}: (orig={attrs['original_id']}, t={attrs['t']})")
 
-    # --- Print WAIT edges ---
+    # Print WAIT edges
     print("\nWAIT edges:")
     for src, dst, edge_attrs in G_expanded.edges(data=True):
         if edge_attrs.get("type_edge") == "wait":
@@ -139,7 +95,7 @@ def print_expanded_graph(G_expanded: NetworkGraph) -> None:
                 f"({dst_attrs['original_id']},t={dst_attrs['t']},id={dst})"
             )
 
-    # --- Print MOVE edges ---
+    # Print MOVE edges 
     print("\nMOVE edges:")
     for src, dst, edge_attrs in G_expanded.edges(data=True):
         if edge_attrs.get("type_edge") == "move":
@@ -151,38 +107,54 @@ def print_expanded_graph(G_expanded: NetworkGraph) -> None:
             )
 
 
-def graph_difference(G1, G2):
+def animate_paths(G: NetworkGraph,  plan_result: PlanResult) -> None:
     """
-    Compute differences between two NetworkX graphs.
+    Animation of agent on the graph
 
     Args:
-        G1, G2: networkx graphs
-
-    Returns:
-        dict with:
-            - nodes_only_in_G1
-            - nodes_only_in_G2
-            - edges_only_in_G1
-            - edges_only_in_G2
+        G:  original graph
+        plan_result: resulting plan
     """
 
-    # --- Nodes ---
-    nodes_G1 = set(G1.nodes())
-    nodes_G2 = set(G2.nodes())
+    colors = [
+        "blue", "red", "lightgreen", "lightblue", "darkgreen", "purple", "violet",
+        "gold", "silver", "pink", "orange", "yellow"]
 
-    nodes_only_in_G1 = nodes_G1 - nodes_G2
-    nodes_only_in_G2 = nodes_G2 - nodes_G1
+    pos = {node: (data["x"], data["y"]) for node, data in G.nodes(data=True)}
 
-    # --- Edges ---
-    edges_G1 = set(G1.edges())
-    edges_G2 = set(G2.edges())
+    agent_ids = list(plan_result.paths_original.keys())
+    paths     = {aid: plan_result.paths_original[aid] for aid in agent_ids}
+    max_steps = max(len(p) for p in paths.values())
 
-    edges_only_in_G1 = edges_G1 - edges_G2
-    edges_only_in_G2 = edges_G2 - edges_G1
+    fig, ax = plt.subplots(figsize=(8, 8))
 
-    return {
-        "nodes_only_in_G1": nodes_only_in_G1,
-        "nodes_only_in_G2": nodes_only_in_G2,
-        "edges_only_in_G1": edges_only_in_G1,
-        "edges_only_in_G2": edges_only_in_G2,
-    }
+    def draw_frame(t):
+        ax.clear()
+
+        nx.draw_networkx_edges(G, pos, ax=ax,edge_color="lightgray",arrows=True, arrowsize=10,connectionstyle="arc3,rad=0.1")
+        nx.draw_networkx_nodes(G, pos, ax=ax,node_size=300,node_color="whitesmoke",edgecolors="gray",linewidths=1.0)
+        nx.draw_networkx_labels(G, pos, ax=ax,font_size=7,font_color="gray")
+
+        for i, aid in enumerate(agent_ids):
+            color = colors[i % len(colors)]
+            path  = paths[aid]
+
+            current_node = path[t] if t < len(path) else path[-1]
+            goal_node    = path[-1]
+
+            cx, cy = pos[current_node]
+            gx, gy = pos[goal_node]
+
+            ax.plot(gx, gy, "o",markersize=18,markerfacecolor="none",markeredgecolor=color,markeredgewidth=2.5)
+
+            ax.plot(cx, cy, "o",markersize=14,color=color,zorder=5)
+
+            ax.text(cx, cy, str(aid),ha="center", va="center",fontsize=8, fontweight="bold",color="white", zorder=6)
+
+        ax.set_title(f"MAPF — timestep {t} / {max_steps - 1}")
+        ax.axis("off")
+
+    ani = animation.FuncAnimation(fig,draw_frame,frames=max_steps,interval=1000,  repeat=True)
+
+    plt.tight_layout()
+    plt.show()

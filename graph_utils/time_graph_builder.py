@@ -1,7 +1,5 @@
 from Network_graph import NetworkGraph
 
-
-
 def time_expansion_graph_with_constr(G: NetworkGraph, T: int, vertex_constraints = None, edge_constraints = None) -> NetworkGraph:
     """
     Build a time-expanded graph from a standard NetworkGraph.
