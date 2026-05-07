@@ -3,7 +3,7 @@ import math
 from Network_graph import NetworkGraph
 
 
-def reconstruct_path(node_to_predecessor: dict, current: int) -> list:
+def reconstruct_path(node_to_predecessor, current):
     """
     Function use in A star function.
     Reconstruct the optimal path from start to current node.
@@ -16,14 +16,16 @@ def reconstruct_path(node_to_predecessor: dict, current: int) -> list:
     Returns:
         list of node ids from start to goal that identify the shortest path
     """
-    total_path = [current]
+    total_path = []
     while current in node_to_predecessor:
+        total_path.append(current)
         current = node_to_predecessor[current]
-        total_path.insert(0, current) 
+    total_path.append(current)  
+    total_path.reverse()
     return total_path
 
 
-def a_star(G: NetworkGraph, start: int, goal: int, extended = False) -> list | None:
+def a_star(G: NetworkGraph, start: int, goal: int, extended = False, heuristic = None) -> list | None:
     """
     A* pathfinding algorithm on a NetworkGraph. This function support both the shortest path search
     in graph and in time-expanded graph
@@ -42,6 +44,8 @@ def a_star(G: NetworkGraph, start: int, goal: int, extended = False) -> list | N
     Returns:
         list of node ids representing the optimal path (in the extended-time graph in case), or None if no path exists
     """
+    if heuristic is None:
+        heuristic = h_manhattan
 
     # early exit if start == goal
     if not extended and start == goal:
@@ -49,61 +53,60 @@ def a_star(G: NetworkGraph, start: int, goal: int, extended = False) -> list | N
     if extended and G.nodes[start]["original_id"] == goal:
         return [start]
 
+    # find the corresponding nodes:
+    # in extended mode find the node (goal_original_id, t=0) for spatial coordinates
+    # in standard mode goal_ref is goal itself
+
+    if extended:
+        goal_ref = next( (nid for nid, d in G.nodes(data=True) if d["original_id"] == goal and d["t"] == 0), None )
+        if goal_ref is None:
+            return None   # goal does not exist in the expanded graph
+    else:
+        goal_ref = goal
+
     # node_to_predecessor[n] = predecessor of n on the current best path (shortest) from start
     node_to_predecessor = {}    
 
     # g[n] = cost of the best known path from start to n
-    g = {}   
-    for id_node in G.nodes:
-        g[id_node] = float("inf")   
-    g[start] = 0   
-
-    # f[n] = g[n] + h(n) = estimated total cost through n 
-    # with: g the cost function for path from start to n and h the estimated cost function for path from n to goal node
-    f = {}
-    for id_node in G.nodes:
-        f[id_node] = float("inf")
-    f[start] = h_euclidean(G, start, goal, extended)    # choosen between admissible heuristics (ATTENZIONE: se pesi diversi da distanza allora non ha più senso l'euclidea)
+    g = {start: 0}
+    f = {start: heuristic(G, start, goal_ref)}
 
     # min-heap priority queue: (f_score, node_id)
-    heap_list = []    
-    heapq.heappush(heap_list, (f[start], start))    
+    heap = [(f[start], start)]   
 
-    while heap_list:   # ciclo heap
+    while heap:   # ciclo heap
 
         # extract node with lowest f score
-        f_current, current = heapq.heappop(heap_list)
+        f_current, current = heapq.heappop(heap)
 
         # skip outdated entries (duplicates with higher cost)
-        if f_current > f[current]:   
+        if f_current > f.get(current, float("inf")):
             continue
 
         # check if goal is reached
         if extended and G.nodes[current]["original_id"] == goal:
             return reconstruct_path(node_to_predecessor, current)
-        if current == goal and extended == False:
+        if not extended and current == goal:
             return reconstruct_path(node_to_predecessor, current)
 
+
         # explore outgoing edges
-        for src, neighbor, edge_attrs in G.out_edges(current, data=True):
-            
-            d =edge_attrs["weight"]   # d(current, neighbor)
+        for _, neighbor, edge_attrs in G.out_edges(current, data=True):
 
             # optimal path for reaching neighbor passing from the current node
-            possible_g = g[current] + d
+            possible_g = g[current] + edge_attrs["weight"]
 
-            if possible_g < g[neighbor]:
+            if possible_g < g.get(neighbor, float("inf")):
                 # better path from start to neighbor found through current
-                node_to_predecessor[neighbor] = current  # update optimal path to neighbor
-                g[neighbor]=possible_g   # update best cost found so far 
-                f[neighbor] = possible_g + h_euclidean(G, neighbor, goal, extended)   # update estimated cost for optimal path to the goal
-
-                heapq.heappush(heap_list,(f[neighbor], neighbor))  
+                node_to_predecessor[neighbor] = current   # update optimal path to neighbor
+                g[neighbor] = possible_g   # update best cost found so far 
+                f[neighbor] = possible_g + heuristic(G, neighbor, goal_ref)   # update estimated cost for optimal path to the goal
+                heapq.heappush(heap, (f[neighbor], neighbor))
 
     return None
 
 
-def h_euclidean(G: NetworkGraph, n: int, goal: int, extended: bool = False) -> float:
+def h_euclidean(G: NetworkGraph, n: int, goal_node: int) -> float:
     """
     Euclidean distance heuristic between node n and goal.
     
@@ -119,17 +122,19 @@ def h_euclidean(G: NetworkGraph, n: int, goal: int, extended: bool = False) -> f
     Returns:
         Euclidean distance estimate from n to goal in Graph
     """
-    if extended:
-        # retrieve id node in the extended-time graph corresponding to (goal, t=0)
-        goal_nodes = [nid for nid, d in G.nodes(data=True) if d["original_id"] == goal and d["t"] == 0]
-        goal_node = goal_nodes[0]
-    else:
-        goal_node = goal
+    return math.sqrt((x_goal - x_n) ** 2 + (y_goal - y_n) ** 2)
 
-    # retrieve spatial coordinates
-    x_goal = G.nodes[goal_node]["x"]
-    y_goal = G.nodes[goal_node]["y"]
-    x_n = G.nodes[n]["x"]
-    y_n = G.nodes[n]["y"]
+def h_manhattan(G: NetworkGraph, n: int, goal_node: int) -> float:
+    """
+    Manhattan distance heuristic between node n and goal_node.
 
-    return math.sqrt((x_goal - x_n)**2 + (y_goal - y_n)**2)
+    Args:
+        G: the graph
+        n: current node id
+        goal_node: goal node id (già risolto, non original_id)
+    Returns:
+        Manhattan distance from n to goal_node
+    """
+    x_n,y_n = G.nodes[n]["x"], G.nodes[n]["y"]
+    x_goal, y_goal = G.nodes[goal_node]["x"], G.nodes[goal_node]["y"]
+    return abs(x_goal - x_n) + abs(y_goal - y_n)

@@ -65,4 +65,4 @@ def precomputed_shortest_path_A_star(G: NetworkGraph) -> list:
             sp_len = len(a_star(G, all_nodes[i], all_nodes[j]))    # weight for each move in the graph is equal to one
             inner_list.append(sp_len)
         matrix_all_shortest_path_len.append(inner_list) 
-    return matrix_all_shortest_path_len    
+    return matrix_all_shortest_path_len  

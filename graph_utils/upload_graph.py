@@ -16,7 +16,7 @@ def make_grid_graph(rows: int, cols: int, step: float = 1.0) -> NetworkGraph:
     """
     G = NetworkGraph()
 
-    # --- Node creation ---
+    # --- Node creation
     # Each node gets a linear id  nid = r*cols + c  and spatial attributes x, y
     for r in range(rows):
         for c in range(cols):

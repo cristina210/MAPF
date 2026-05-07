@@ -46,8 +46,6 @@ class Fleet:
             starts: list starting node of agents,        
             goals:  list goal node of agents (or None),   
         """
-        # zip accoppia le tre liste elemento per elemento: (0,3,9), (1,7,None), ...
-        # il dizionario permette accesso O(1) per agent_id invece di scorrere una lista
         self.agents = {}
         for aid, s, g in zip(ids, starts, goals):
             self.agents[aid] = Agent(id=aid, start=s, goal=g)

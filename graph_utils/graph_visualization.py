@@ -116,9 +116,7 @@ def animate_paths(G: NetworkGraph,  plan_result: PlanResult) -> None:
         plan_result: resulting plan
     """
 
-    colors = [
-        "blue", "red", "lightgreen", "lightblue", "darkgreen", "purple", "violet",
-        "gold", "silver", "pink", "orange", "yellow"]
+    colors = [ "blue","red","green","orange","purple","gold","deepskyblue","magenta","lime","darkcyan","brown","hotpink","olive","turquoise","navy","crimson","darkorange","teal","indigo","forestgreen"]
 
     pos = {node: (data["x"], data["y"]) for node, data in G.nodes(data=True)}
 

@@ -61,6 +61,7 @@ class MAPFEnvironment:
         self.history.append(snapshot)
         return snapshot
 
+
     def run_plan(self, plan_result: PlanResult) -> list:
         """
         Execute the plan and return the list of visited states.
@@ -71,17 +72,33 @@ class MAPFEnvironment:
         Returns:
             lista di snapshot, uno per ogni timestep (incluso t=0)
         """
-        assert plan_result.success, "Impossibile eseguire un piano fallito"
+        assert plan_result.success, "Impossible to follow the plan"
+
+
+        # Check il all agent with a goal should have a plan
+        for agent in self.instance.fleet.agents.values():
+            if agent.goal is None:
+                continue   # agente idle: non pianificato, rimane sul suo start
+            if agent.id not in plan_result.paths_original:
+                raise ValueError(
+                    f"Agent {agent.id} has a goal but not a path in PlanResult. ")
 
         self._reset()
 
-        max_steps = max(len(p) for p in plan_result.paths_original.values())
+        # only agents with a planned path
+        active_paths = { aid: path for aid, path in plan_result.paths_original.items() if path}
+
+        if not active_paths:
+            return self.history   # no active agents, history contains only t=0
+
+        max_steps = max(len(p) for p in active_paths.values())
 
         for t in range(1, max_steps):
             actions = {}
-            for agent_id, path in plan_result.paths_original.items():
-                next_node = path[t] if t < len(path) else path[-1]
-                actions[agent_id] = next_node
+
+            for agent_id, path in active_paths.items():
+                # se l'agente ha già raggiunto il goal si ferma all'ultimo nodo
+                actions[agent_id] = path[t] if t < len(path) else path[-1]
             self.step(actions)
 
         return self.history

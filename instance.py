@@ -2,7 +2,9 @@ from typing import Optional
 from Network_graph import NetworkGraph
 from fleet import Fleet
 from shortest_path_algorithm.A_star import a_star
+from extended_time_graph import TimeExpandedGraph
 
+WAIT_FACTOR = 1   # T_min * factor + num_agents 
 
 class MAPFInstance:
     """
@@ -10,7 +12,7 @@ class MAPFInstance:
     Contains graph, fleet and time horizon 
     """
 
-    def __init__(self, graph: NetworkGraph, fleet: Fleet, T_sim: int, name: str = "unnamed"):
+    def __init__(self, graph: NetworkGraph, fleet: Fleet, name: str = "unnamed"):
         """
         Args:
             graph: graph
@@ -20,10 +22,41 @@ class MAPFInstance:
         """
         self.graph = graph
         self.fleet = fleet
-        self.T = T_sim + 3
         self.name = name
+        # compute T min as the longest shortest path
+        self.T_min = self._compute_T_min()
+        self.T = self.T_min + self.fleet.num_agents() + round(len(self.graph.nodes)/(len(self.graph.nodes) - self.fleet.num_agents()))
 
         self._validate()
+    
+    def find_shortest_path_for_each_agent(self)  -> dict:
+        dict_SP = {}
+        for i in range(0, self.fleet.num_agents()-1):
+            id_agent = self.fleet.agents()[i]
+            path_SP = a_star(NetworkGraph, self.fleet[id_agent].start_node, self.fleet[id_agent].start_node, extended = False)
+            dict_SP[id_agent] = path_SP
+        return dict_SP
+
+    def _compute_T_min(self) -> int:
+        """
+        Calcola il T minimo come la lunghezza del cammino più lungo
+        tra tutti gli agenti (ognuno calcolato sul grafo originale con A*).
+        Un agente idle (goal=None) non contribuisce al calcolo.
+
+        Returns:
+            lunghezza massima dei cammini minimi tra tutti gli agenti attivi
+        """
+        max_len = 0
+        for a in self.fleet.agents.values():
+            if a.goal is None:
+                continue
+            path = a_star(self.graph, a.start, a.goal)
+            if path is None:
+                raise ValueError(
+                    f"Agent {a.id}: no path from start={a.start} to goal={a.goal}. "
+                )
+            max_len = max(max_len, len(path))
+        return max_len
 
     def _validate(self) -> None:
         """
@@ -35,6 +68,9 @@ class MAPFInstance:
         """
         all_nodes = set(self.graph.nodes)
         starts    = []
+
+        if len(self.graph.nodes) <= self.fleet.num_agents():
+            raise ValueError(f"Too many agents on the graph")
 
         # start and goal exist in the graph
         for a in self.fleet.agents.values():

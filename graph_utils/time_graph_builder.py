@@ -53,7 +53,7 @@ def time_expansion_graph_with_constr(G: NetworkGraph, T: int, vertex_constraints
             if t > 0:
                 node_prev = new_di_nodes_from_id_n_expansion[t-1]   # count
                 node_curr = new_di_nodes_from_id_n_expansion[t]     # count + 1
-                if node_curr not in vertex_constraints and node_prev not in vertex_constraints and (node_prev, node_curr) not in edge_constraints:
+                if node_curr not in vertex_constraints and node_prev not in vertex_constraints and (node_prev, node_curr) not in edge_constraints and (node_curr, node_prev) not in edge_constraints:
                     G_expanded.add_edge(node_prev, node_curr, weight=1, type_edge="wait")  
 
         old_id_to_new_list.append(new_di_nodes_from_id_n_expansion)
@@ -65,7 +65,7 @@ def time_expansion_graph_with_constr(G: NetworkGraph, T: int, vertex_constraints
         for t in range(0,T-1):
             node_t_src = new_nodes_correspondent_to_src[t]
             node_tplus1_dst =  new_nodes_correspondent_to_dst[t+1]
-            if node_tplus1_dst not in vertex_constraints and node_t_src not in vertex_constraints and (node_t_src, node_tplus1_dst) not in edge_constraints:
+            if node_tplus1_dst not in vertex_constraints and node_t_src not in vertex_constraints and (node_t_src, node_tplus1_dst) not in edge_constraints and (node_tplus1_dst, node_t_src) not in edge_constraints:
                 G_expanded.add_edge(node_t_src, node_tplus1_dst, weight = 1, type_edge="move")
     return G_expanded, old_id_to_new_list
 
