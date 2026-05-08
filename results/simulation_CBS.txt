@@ -1,0 +1,83 @@
+======================================================================
+  SIMULATION LOG
+======================================================================
+  Total timesteps: 5
+
+  t=  0  
+    Agent   0 -> node 4
+    Agent   1 -> node 15
+    Agent   2 -> node 10
+    Agent   3 -> node 13
+    Agent   4 -> node 1
+    Agent   5 -> node 5
+    Agent   6 -> node 9
+    Agent   7 -> node 2
+    Agent   8 -> node 0
+    Agent   9 -> node 3
+    Agent  10 -> node 6
+
+  t=  1  
+    Agent   0 -> node 4
+    Agent   1 -> node 11
+    Agent   2 -> node 9
+    Agent   3 -> node 14
+    Agent   4 -> node 5
+    Agent   5 -> node 6
+    Agent   6 -> node 8
+    Agent   7 -> node 1
+    Agent   8 -> node 0
+    Agent   9 -> node 2
+    Agent  10 -> node 7
+
+  t=  2  
+    Agent   0 -> node 5
+    Agent   1 -> node 7
+    Agent   2 -> node 8
+    Agent   3 -> node 15
+    Agent   4 -> node 9
+    Agent   5 -> node 10
+    Agent   6 -> node 12
+    Agent   7 -> node 0
+    Agent   8 -> node 4
+    Agent   9 -> node 1
+    Agent  10 -> node 11
+
+  t=  3  
+    Agent   0 -> node 6
+    Agent   1 -> node 7
+    Agent   2 -> node 8
+    Agent   3 -> node 11
+    Agent   4 -> node 13
+    Agent   5 -> node 14
+    Agent   6 -> node 12
+    Agent   7 -> node 4
+    Agent   8 -> node 8
+    Agent   9 -> node 0
+    Agent  10 -> node 11
+
+  t=  4  
+    Agent   0 -> node 7
+    Agent   1 -> node 7
+    Agent   2 -> node 8
+    Agent   3 -> node 11
+    Agent   4 -> node 12
+    Agent   5 -> node 14
+    Agent   6 -> node 12
+    Agent   7 -> node 8
+    Agent   8 -> node 8
+    Agent   9 -> node 4
+    Agent  10 -> node 11
+
+  t=  5  [DONE]
+    Agent   0 -> node 7
+    Agent   1 -> node 7
+    Agent   2 -> node 8
+    Agent   3 -> node 11
+    Agent   4 -> node 12
+    Agent   5 -> node 14
+    Agent   6 -> node 12
+    Agent   7 -> node 12
+    Agent   8 -> node 8
+    Agent   9 -> node 8
+    Agent  10 -> node 11
+

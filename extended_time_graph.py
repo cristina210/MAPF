@@ -27,6 +27,9 @@ class TimeExpandedGraph:
         self.G_expanded, self.old_id_to_new = time_expansion_graph_with_constr(G, T, self.vertex_constraints, self.edge_constraints)
         # G is the resulting time extended graph and old_id_to_new is a list containing for each original id of G_original the corresponding expanded
         # nodes in G_expanded (also the ones involved in constraints)
+        node_ids = sorted(G.nodes())
+        assert node_ids == list(range(len(node_ids))), \
+            "Node ids must be consecutive integers starting from 0"
     def get_expanded_id(self, original_id: int, t: int) -> int:
         """
         Return the expanded node id corresponding to original_id at timestep t.
@@ -137,5 +140,13 @@ class TimeExpandedGraph:
             if src not in new_vertex_constr and dst not in new_vertex_constr and (src, dst) not in new_edge_constr:
                 G_new.add_edge(src, dst, **attrs)
         return G_new
+
+    @staticmethod
+    def compute_expanded_id(original_id: int, t: int, T: int) -> int:      # works only if id_expanded are built sequentially as in time_graph_builder
+        return original_id * T + t
+
+    @staticmethod  
+    def compute_original_id(expanded_id: int, T: int) -> int:           # works only if id_expanded are built sequentially as in time_graph_builder
+        return expanded_id // T
                 
 

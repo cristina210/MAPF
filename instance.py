@@ -4,7 +4,6 @@ from fleet import Fleet
 from shortest_path_algorithm.A_star import a_star
 from extended_time_graph import TimeExpandedGraph
 
-WAIT_FACTOR = 1   # T_min * factor + num_agents 
 
 class MAPFInstance:
     """
@@ -29,13 +28,6 @@ class MAPFInstance:
 
         self._validate()
     
-    def find_shortest_path_for_each_agent(self)  -> dict:
-        dict_SP = {}
-        for i in range(0, self.fleet.num_agents()-1):
-            id_agent = self.fleet.agents()[i]
-            path_SP = a_star(NetworkGraph, self.fleet[id_agent].start_node, self.fleet[id_agent].start_node, extended = False)
-            dict_SP[id_agent] = path_SP
-        return dict_SP
 
     def _compute_T_min(self) -> int:
         """
@@ -55,7 +47,7 @@ class MAPFInstance:
                 raise ValueError(
                     f"Agent {a.id}: no path from start={a.start} to goal={a.goal}. "
                 )
-            max_len = max(max_len, len(path))
+            max_len = max(max_len, len(path)-1)
         return max_len
 
     def _validate(self) -> None:
@@ -96,8 +88,7 @@ class MAPFInstance:
             min_steps = len(shortest) - 1   # number of edges = timesteps needed
             if self.T <= min_steps:
                 raise ValueError( f"Agent {a.id}: T={self.T} is too small — at least {min_steps + 1} timesteps "
-                    f"are needed to reach goal={a.goal} from start={a.start}. "
-                    f"Set T_sim >= {min_steps + 1}.")
+                    f"are needed to reach goal={a.goal} from start={a.start}. ")
 
     def num_agents(self) -> int:
         return self.fleet.num_agents()

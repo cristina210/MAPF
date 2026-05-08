@@ -1,0 +1,218 @@
+from tabulate import tabulate
+
+
+def build_single_agent_rows(agent, graph, solvers: dict):
+    """
+    Builds a comparison table for a single agent across multiple solvers.
+
+    Each row corresponds to one algorithm and reports:
+    - temporal path length (steps in expanded/time sense)
+    - spatial distance/weight on the graph
+    - overhead relative to a baseline solver
+    - actual path representation
+    """
+    headers = ["Algorithm", "Steps", "Distance/Weight", "Overhead", "Path"]
+    rows = []
+
+    # primo solver come baseline per l'overhead (tipicamente A*)
+    baseline_name  = next(iter(solvers))
+    baseline_steps = solvers[baseline_name].path_length_time(agent.id)
+
+    for algo_name, result in solvers.items():
+        steps = result.path_length_time(agent.id)
+        dist  = result.path_length_space(agent.id, graph)
+        path  = result.path_original_for(agent.id)
+
+        if steps is not None and baseline_steps is not None and algo_name != baseline_name:
+            overhead = f"+{steps - baseline_steps}"
+        else:
+            overhead = "—"
+
+        rows.append([
+            algo_name,
+            steps    if steps is not None else "—",
+            f"{dist:.2f}" if dist is not None else "—",
+            overhead,
+            path     if path is not None else "unreachable",
+        ])
+
+    return headers, rows
+
+
+def build_aggregate_rows(graph, solvers: dict):
+    """
+    Builds a global comparison table across all solvers.
+    Reports aggregate metrics:
+    - makespan: total completion time of all agents
+    - total temporal cost (sum of path times)
+    - total spatial cost (sum of path lengths/weights on graph)
+    """
+    headers = ["Algorithm", "Makespan", "Total Steps", "Total Distance/Weight"]
+    rows = []
+
+    for algo_name, result in solvers.items():
+        rows.append([
+            algo_name,
+            result.makespan(),
+            result.cumulative_time_total(),
+            f"{result.total_path_length_space(graph):.2f}",
+        ])
+
+    return headers, rows
+
+
+
+def print_comparison(instance, solvers: dict):
+    """
+    Prints a full comparison of multiple MAPF solvers on a given instance.
+    The output is structured in three blocks:
+    1. Per-agent results (detailed comparison per agent)
+    2. Aggregate results (global metrics per solver)
+    3. Solver statistics (runtime and internal metrics)
+
+    Args:
+        instance: MAPF instance containing graph and fleet
+        solvers: dictionary mapping solver names to PlanResult objects
+    """
+
+    print()
+    print("=" * 70)
+    print("  PER-AGENT RESULTS")
+    print("=" * 70)
+
+    for agent in instance.fleet.agents.values():
+        print(f"\n  Agent {agent.id}  |  {agent.start} → {agent.goal}")
+        headers, rows = build_single_agent_rows(agent, instance.graph, solvers)
+        print(tabulate(rows, headers=headers, tablefmt="rounded_outline"))
+
+    print()
+    print("=" * 70)
+    print("  AGGREGATE RESULTS")
+    print("=" * 70)
+    headers, rows = build_aggregate_rows(instance.graph, solvers)
+    print(tabulate(rows, headers=headers, tablefmt="rounded_outline"))
+
+    print()
+    print("=" * 70)
+    print("  SOLVER STATISTICS")
+    print("=" * 70)
+    for algo_name, result in solvers.items():
+        print(f"\n  {algo_name}:")
+        for key, val in result.solver_stats.items():
+            print(f"    {key.replace('_', ' ').capitalize():<35}: {val}")
+
+
+
+def save_comparison(instance, solvers: dict, filepath: str = "results.txt"):
+    """
+    Saves the same comparison produced in print_comparison to a text file.
+    Structure mirrors console output:
+    - per-agent tables
+    - aggregate metrics
+    - solver statistics
+
+    Args:
+        instance: MAPF instance
+        solvers: solver results dictionary
+        filepath: output file path
+    """
+    with open(filepath, "w", encoding="utf-8") as f:
+
+        f.write("\n")
+        f.write("=" * 70 + "\n")
+        f.write("  PER-AGENT RESULTS\n")
+        f.write("=" * 70 + "\n")
+
+        for agent in instance.fleet.agents.values():
+            f.write(f"\n  Agent {agent.id}  |  {agent.start} → {agent.goal}\n")
+            headers, rows = build_single_agent_rows(agent, instance.graph, solvers)
+            f.write(tabulate(rows, headers=headers, tablefmt="rounded_outline") + "\n")
+
+        f.write("\n")
+        f.write("=" * 70 + "\n")
+        f.write("  AGGREGATE RESULTS\n")
+        f.write("=" * 70 + "\n")
+        headers, rows = build_aggregate_rows(instance.graph, solvers)
+        f.write(tabulate(rows, headers=headers, tablefmt="rounded_outline") + "\n")
+
+        f.write("\n")
+        f.write("=" * 70 + "\n")
+        f.write("  SOLVER STATISTICS\n")
+        f.write("=" * 70 + "\n")
+        for algo_name, result in solvers.items():
+            f.write(f"\n  {algo_name}:\n")
+            for key, val in result.solver_stats.items():
+                f.write(f"    {key.replace('_', ' ').capitalize():<35}: {val}\n")
+
+
+def save_instance(instance, filepath: str = "instance.txt"):
+    """
+    Saves main characteristics of MAPF instance in text file.
+
+    Includes:
+    - graph structure (nodes, edges, coordinates, weights)
+    - time horizon information
+    - fleet description (agents, start/goal positions, state)
+    """
+    with open(filepath, "w", encoding="utf-8") as f:
+
+        f.write("=" * 70 + "\n")
+        f.write("  INSTANCE: " + instance.name + "\n")
+        f.write("=" * 70 + "\n")
+
+        # graph
+        f.write("\nGRAPH\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"  Nodes : {len(instance.graph.nodes)}\n")
+        f.write(f"  Edges : {len(instance.graph.edges)}\n")
+        f.write("\n  Node list (id | x | y):\n")
+        for nid, attrs in instance.graph.nodes(data=True):
+            f.write(f"    {nid:>4} | x={attrs['x']:.2f} | y={attrs['y']:.2f}\n")
+        f.write("\n  Edge list (src -> dst | weight):\n")
+        for src, dst, attrs in instance.graph.edges(data=True):
+            f.write(f"    {src:>4} -> {dst:<4} | weight={attrs.get('weight', '—')}\n")
+
+        # time horizon
+        f.write("\nTIME\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"  T_min (longest individual shortest path) : {instance.T_min}\n")
+        f.write(f"  T     (time horizon used for planning)   : {instance.T}\n")
+
+        # fleet
+        f.write("\nFLEET\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"  Number of agents: {instance.fleet.num_agents()}\n\n")
+        f.write(f"  {'ID':>4} | {'Start':>6} | {'Goal':>6} | {'Start (x,y)':>14} | {'Goal (x,y)':>14} | State\n")
+        f.write("  " + "-" * 65 + "\n")
+        for agent in instance.fleet.agents.values():
+            start_attrs = instance.graph.nodes[agent.start]
+            start_xy    = f"({start_attrs['x']:.2f}, {start_attrs['y']:.2f})"
+            if agent.goal is not None:
+                goal_attrs = instance.graph.nodes[agent.goal]
+                goal_xy    = f"({goal_attrs['x']:.2f}, {goal_attrs['y']:.2f})"
+                goal_str   = str(agent.goal)
+            else:
+                goal_xy  = "—"
+                goal_str = "—"
+            f.write(f"  {agent.id:>4} | {agent.start:>6} | {goal_str:>6} | {start_xy:>14} | {goal_xy:>14} | {agent.state}\n")
+
+
+def save_simulation(history: list, filepath: str = "simulation_log.txt"):
+    """
+    Saves main characteristics of MAPF simulation in text file.
+    """
+    with open(filepath, "w", encoding="utf-8") as f:
+
+        f.write("=" * 70 + "\n")
+        f.write("  SIMULATION LOG\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"  Total timesteps: {len(history) - 1}\n\n")
+
+        for snapshot in history:
+            t    = snapshot["timestep"]
+            done = snapshot["done"]
+            pos  = snapshot["positions"]
+            f.write(f"  t={t:>3}  {'[DONE]' if done else ''}\n")
+            for agent_id, node in pos.items():
+                f.write(f"    Agent {agent_id:>3} -> node {node}\n")
+            f.write("\n")

@@ -3,6 +3,7 @@ from fleet import Fleet
 from extended_time_graph import TimeExpandedGraph
 from shortest_path_algorithm.A_star import a_star
 from MAPF_algorithm.plan_result import PlanResult
+import time
 
 
 
@@ -25,7 +26,7 @@ class PrioritizedPlanner:
         """
         self.G_original = G_original
         self.T = T
-        self.teg  = None 
+        self.stats = { "runtime_sec": 0.0, "planned_agents": 0, "failed_agents": 0, "vertex_constraints_added": 0, "edge_constraints_added": 0}
 
     def plan(self, fleet: Fleet) -> PlanResult:
         """
@@ -36,6 +37,8 @@ class PrioritizedPlanner:
         Returns:
             PlanResult bject
         """
+        self.stats["failed_agents"] = fleet.num_agents()
+        t0 = time.perf_counter()
         self.teg = TimeExpandedGraph(self.G_original, self.T)
         result   = PlanResult(success=True)
 
@@ -49,9 +52,15 @@ class PrioritizedPlanner:
 
             if path is None:
                 # No path found
-                return PlanResult(success=False, failed_agent=agent.id)
+                result = PlanResult(success=False, failed_agent=agent.id)
+                self.stats["runtime_sec"] = time.perf_counter() - t0    # stat
+                result.solver_stats = self.stats.copy()
+                return result
+            
+            self.stats["planned_agents"] += 1
+            self.stats["failed_agents"] -= 1
 
-            # converti in original ids ORA, mentre il teg è ancora integro
+            # conversion in original Ids
             path_original = [self.teg.get_original_id(n) for n in path]
 
             result.add_path(agent.id, path, path_original)
@@ -59,11 +68,16 @@ class PrioritizedPlanner:
             # extract constraints from the path just planned
             # all visited nodes become vertex constraints
             nodes_constr = set(path)
+            self.stats["vertex_constraints_added"] += len(nodes_constr)   # stat
 
             # all visited edges become edges constraints
             edges_constr = {(path[j], path[j + 1]) for j in range(len(path) - 1)}
+            self.stats["edge_constraints_added"] += len(edges_constr)    # stat
 
             # update teg removing nodes and edges
             self.teg.update_teg_with_adding_constraints(nodes_constr, edges_constr)
+        
+        self.stats["runtime_sec"] = time.perf_counter() - t0    # stat
+        result.solver_stats = self.stats.copy()
 
         return result

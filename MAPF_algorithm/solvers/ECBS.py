@@ -3,24 +3,17 @@ from typing import Optional
 from Network_graph import NetworkGraph
 from fleet import Fleet
 from extended_time_graph import TimeExpandedGraph
-from shortest_path_algorithm.A_star import a_star
+from shortest_path_algorithm.A_star import a_star_with_focal_search, a_star
 from MAPF_algorithm.plan_result import PlanResult
 import time
 
 
-class CBSNode:
+class ECBSNode:
     """
-    Represents a node in the CBS constraint tree.
-    Each node contains a set of constraints (vertex and edge) accumulated
-    from the root down to this node, and a solution: one path per agent
-    that satisfies those constraints.
-    The total cost is the sum of all path lengths.
-
-    The tree is explored in best-first order (lowest cost first).
+    ...
     """
 
-
-    def __init__(self,vertex_constraints: dict = None,edge_constraints: dict = None,solution: dict = None, parent: "CBSNode" = None):
+    def __init__(self,vertex_constraints: dict = None,edge_constraints: dict = None,solution: dict = None, parent: "ECBSNode" = None):
 
         self.vertex_constraints = vertex_constraints if vertex_constraints is not None else {}
         self.edge_constraints = edge_constraints if edge_constraints is not None else {}
@@ -37,27 +30,25 @@ class CBSNode:
         """
         return sum(len(path) for path in self.solution.values())
 
-    def __lt__(self, other: "CBSNode") -> bool:
+    def __lt__(self, other: "ECBSNode") -> bool:
         # required by heapq to compare nodes with equal cost
         return self.cost < other.cost
+    
+    def compute_how_many_fixed_agent_in_each_node(self, id_agent):
+        dict_number_agent_in_node = {}
+        for agent_id, path in self.solution.items():  # self.solution, non solution
+            if agent_id == id_agent:
+                continue
+            for node in path:
+                dict_number_agent_in_node[node] = dict_number_agent_in_node.get(node, 0) + 1
+        return dict_number_agent_in_node
 
-
-class CBSSolver:
+class ECBSSolver:
     """
-    Conflict-Based Search (CBS) MAPF solver.
-
-    CBS operates on two levels:
-    - High level: explores a constraint tree in best-first order. Each node holds a set of constraints and a solution.
-      When a conflict is detected, the node is split into two children, each adding one new constraint for one of the two agents involved.
-    - Low level: for each agent, runs A* on a time-expanded graph built with the constraints of the current node.
-
-    Choice: the time-expanded graph is rebuilt from scratch at each node instead of being stored as a node attribute. Teg is used for the search 
-    with A*  (vedere se poi ha senso provare a implementare A* che lavora direttamente nello spazio tempo)
-
-    CBS is complete and optimal under standard assumptions.
+    ...
     """
 
-    def __init__(self, G_original: NetworkGraph, T: int):
+    def __init__(self, G_original: NetworkGraph, T: int, w_l = 1, w_h = 1):
         """
         Args:
             G_original: original spatial graph
@@ -66,7 +57,8 @@ class CBSSolver:
         self.G_original = G_original
         self.T = T
         self.stats = {"expanded_nodes": 0, "generated_nodes": 0, "max_tree_depth": 0, "runtime_sec": 0.0, "max_heap_size": 0}
-
+        self.w_l = w_l
+        self.w_h = w_h
 
 
     def plan(self, fleet: Fleet) -> PlanResult:
@@ -87,27 +79,20 @@ class CBSSolver:
             # at least one agent has no path even without constraints
             return PlanResult(success=False)
 
-        root = CBSNode(solution=root_solution)
+        root = ECBSNode(solution=root_solution)
 
         # min-heap ordered by cost
         heap = [root]
 
         while heap:
 
-            '''
-            self.iter += 1
-            if self.iter % 10 == 0:
-                print(f"[CBS] iterations={self.iter}, heap={len(heap)}")
-            '''
             self.stats["max_heap_size"] = max(self.stats["max_heap_size"],len(heap))    # stat
             node = heapq.heappop(heap)
             self.stats["expanded_nodes"] += 1    # stat
-            #print(f"[CBS] expanded node cost={node.cost}, heap_size={len(heap)}")   # debug
 
             # detect the first conflict in the current solution
             conflict = self._detect_conflict(node.solution, fleet) 
 
-            #print(f"[CBS] conflict detected: {conflict}")  # debug
 
             if conflict is None:
                 # no conflicts: this solution is valid and optimal
@@ -138,9 +123,9 @@ class CBSSolver:
 
                 if edge_constr is not None:
                     new_edge[agent_id].add(edge_constr)
-
-                new_path = self._plan_single_agent(fleet.get_agent(agent_id), vertex_constraints=new_vertex[agent_id], edge_constraints=new_edge[agent_id])
-
+                
+                congestion_dict = node.compute_how_many_fixed_agent_in_each_node(agent_id)
+                new_path = self._plan_single_agent(fleet.get_agent(agent_id), vertex_constraints=new_vertex[agent_id], edge_constraints=new_edge[agent_id], congestion_dict=congestion_dict)
 
                 # prune this child if the constrained agent has no feasible path
                 if new_path is None:
@@ -149,12 +134,11 @@ class CBSSolver:
                 new_solution = dict(node.solution)
                 new_solution[agent_id] = new_path
 
-                child = CBSNode(vertex_constraints=new_vertex, edge_constraints=new_edge, solution=new_solution, parent=node)
+                child = ECBSNode(vertex_constraints=new_vertex, edge_constraints=new_edge, solution=new_solution, parent=node)
                 self.stats["generated_nodes"] += 1       # stat
                 self.stats["max_tree_depth"] = max(self.stats["max_tree_depth"],child.depth)        # stat
 
                 heapq.heappush(heap, child)
-            # print(f"[CBS] branching agent {agent_id}") # debug
 
         # heap exhausted without finding a conflict-free solution
         result = PlanResult(success=False)
@@ -194,13 +178,11 @@ class CBSSolver:
             if path is None:
                 return None   # no feasible path for this agent
 
-            #print(f"[CBS] Agent {agent.id} - path length (depth): {len(path)}")    # debug
-
             solution[agent.id] = path
 
         return solution
 
-    def _plan_single_agent(self, agent, vertex_constraints: set, edge_constraints: set) -> Optional[list]:
+    def _plan_single_agent(self, agent, vertex_constraints: set, edge_constraints: set, congestion_dict: dict) -> Optional[list]:
         """
         Plans a path for a single agent using A* with the given constraints.
         Used when splitting a CBS node to replan the constrained agent.
@@ -215,7 +197,7 @@ class CBSSolver:
         """
         teg = TimeExpandedGraph(self.G_original, self.T, vertex_constraints, edge_constraints)
         start_exp = teg.get_expanded_id(agent.start, t=0)
-        return a_star(teg.G_expanded, start_exp, agent.goal, extended=True)
+        return a_star_with_focal_search(teg.G_expanded, start_exp, agent.goal, congestion_dict, extended=True, w = self.w_l )
 
     def _detect_conflict(self, solution: dict, fleet: Fleet) -> Optional[tuple]:
         """

@@ -107,7 +107,7 @@ def print_expanded_graph(G_expanded: NetworkGraph) -> None:
             )
 
 
-def animate_paths(G: NetworkGraph,  plan_result: PlanResult) -> None:
+def animate_paths(G: NetworkGraph,  plan_result: PlanResult, name_solver: string) -> None:
     """
     Animation of agent on the graph
 
@@ -149,7 +149,7 @@ def animate_paths(G: NetworkGraph,  plan_result: PlanResult) -> None:
 
             ax.text(cx, cy, str(aid),ha="center", va="center",fontsize=8, fontweight="bold",color="white", zorder=6)
 
-        ax.set_title(f"MAPF — timestep {t} / {max_steps - 1}")
+        ax.set_title(f"{name_solver} — timestep {t} / {max_steps - 1}")
         ax.axis("off")
 
     ani = animation.FuncAnimation(fig,draw_frame,frames=max_steps,interval=1000,  repeat=True)
