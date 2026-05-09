@@ -1,26 +1,29 @@
 import heapq
 import math
 from Network_graph import NetworkGraph
+from MAPF_algorithm.heuristicsBCBS import HEURISTICS_LOW_L
 
 
 def a_star(G: NetworkGraph, start: int, goal: int, extended = False, heuristic = None) -> list | None:
     """
-    A* pathfinding algorithm on a NetworkGraph. This function support both the shortest path search
-    in graph and in time-expanded graph
-    
+    Standard A* pathfinding on a NetworkGraph.
     Supports two modes:
-    - standard (extended=False): finds shortest path from start to goal node id
-    - extended (extended=True): works on a time-expanded graph where goal is
-      matched by original_id attribute, allowing the agent to reach the goal
-      at any timestep
+    - Standard (extended=False): finds the shortest path between two node ids in the original graph.
+    - Extended (extended=True): operates on a time-expanded graph. The goal is matched by the 'original_id' node attribute, so the agent can reach the
+      goal at any feasible timestep. The heuristic uses the spatial coordinates of the goal at t=0 as a reference.
+
+    Duplicate entries in the heap are handled in the following way: when a node is popped, it is skipped if a better path was already found
+    (checked via f_current > f[current]).
 
     Args:
         G: directed NetworkGraph (standard or time-expanded)
-        start: id of the start node in G. id of the start node (standard) or the id of (start_original, t=0)
-        goal: id of the goal node (standard) or original_id (extended)
+        start: expanded node id at t=0 (extended) or original node id (standard)
+        goal: original_id to reach (extended) or goal node id (standard)
         extended: if True, uses time-expanded graph logic
+        heuristic: admissible heuristic function h(G, node, goal_ref). Default: h_manhattan
     Returns:
-        list of node ids representing the optimal path (in the extended-time graph in case), or None if no path exists
+        list of node ids representing the optimal path, or None if no path exists.
+        In extended mode, ids are expanded node ids.
     """
     if heuristic is None:
         heuristic = h_manhattan
@@ -31,9 +34,8 @@ def a_star(G: NetworkGraph, start: int, goal: int, extended = False, heuristic =
     if extended and G.nodes[start]["original_id"] == goal:
         return [start]
 
-    # find the corresponding nodes:
-    # in extended mode find the node (goal_original_id, t=0) for spatial coordinates
-    # in standard mode goal_ref is goal itself
+    # in extended mode: find the expanded node (goal_original_id, t=0)
+    # its spatial coords are used by the heuristic across all timesteps
 
     if extended:
         goal_ref = next( (nid for nid, d in G.nodes(data=True) if d["original_id"] == goal and d["t"] == 0), None )
@@ -47,16 +49,18 @@ def a_star(G: NetworkGraph, start: int, goal: int, extended = False, heuristic =
 
     # g[n] = cost of the best known path from start to n
     g = {start: 0}
+
+    # f[n] = g[n] + h(n, goal_ref): estimated total cost from start to goal through n
     f = {start: heuristic(G, start, goal_ref)}
 
-    # min-heap priority queue: (f_score, node_id)
+    # OPEN: min-heap of (f_score, node_id)
     heap = [(f[start], start)]   
 
     while heap:   # ciclo heap
 
         f_current, current = heapq.heappop(heap)
 
-        # skip outdated entries (duplicates with higher cost)
+        # skip if a better path to current was already found
         if f_current > f.get(current, float("inf")):
             continue
 
@@ -83,95 +87,102 @@ def a_star(G: NetworkGraph, start: int, goal: int, extended = False, heuristic =
     return None
 
 
-def a_star_with_focal_search(G: NetworkGraph, start: int, goal: int, congestion_dict: dict, extended: bool = False, heuristic=None, w: float = 1) -> list | None:
+
+def a_star_with_focal_search(G: NetworkGraph, start: int, goal: int, congestion_dict: dict,
+                              extended: bool = False, heuristic=None, conflict_heuristic="h3", w: float = 1) -> list | None:
     """
-    A* with focal search (low-level planner for BCBS).
-
+    A* with focal search — low-level planner for BCBS.
     Maintains two lists:
-    - OPEN: dictionary containing nodes and corresponding costs 
-    - FOCAL: subset of OPEN containing all nodes with f <= w * f_min that make a priority queue ordered by g_c (accumulated congestion cost along the path).
+    - OPEN: list of all discovered nodes, ordered by f = g + h.
+      f_min (minimum f in OPEN) defines the suboptimality threshold.
+    - FOCAL: subset of OPEN with f <= w * f_min, ordered by g_c
+      (accumulated congestion cost). The node with lowest g_c in focal is expanded,
+      minimising conflicts with other agents within the cost bound.
 
-    At each iteration the node with lowest g_c is extracted from FOCAL, guaranteeing that the returned solution has cost at most w * C*
-    (bounded suboptimal) while minimising conflicts with other agents.
+    Key difference from standard A*:
+    Instead of always expanding the node with lowest f, focal search
+    expands the node with lowest g_c among those within the cost bound.
+    This trades a small cost increase (bounded by w) for fewer conflicts.
+    When w=1, FOCAL = {nodes with f == f_min} and the behaviour matches
+    standard A* when all g_c values are equal (no congestion).
+    Duplicate handling: OPEN is a plain list. When a better path to a node
+    is found, the old entry is removed before appending the new one.
 
     Args:
-        G:               directed NetworkGraph (standard or time-expanded)
-        start:           id of the start node in G
-        goal:            id of the goal node (standard) or original_id (extended)
-        congestion_dict: maps expanded node id -> number of other agents passing through it.
-                         Used to compute g_c: the accumulated conflict cost along the path.
-        extended:        if True, works on a time-expanded graph
-        heuristic:       spatial heuristic f1 (default: h_manhattan)
-        w:               suboptimality factor. w=1 -> optimal. w>1 -> bounded suboptimal, faster search: bias towards avoiding conflicts.
+        G: directed NetworkGraph (standard or time-expanded)
+        start: start node id
+        goal:goal node id (standard) or original_id (extended)
+        congestion_dict: {expanded_node_id: count} — number of other agents
+        passing through each node in the current CT solution. Used to compute g_c incrementally during expansion.
+        extended: if True, uses time-expanded graph logic
+        heuristic: spatial heuristic h(G, node, goal_ref) (default: h_manhattan)
+        w: suboptimality factor.
+        w=1  -> optimal (FOCAL = f_min nodes only).
+        w>1  -> bounded suboptimal (cost <= w * C*), faster.
     Returns:
         list of node ids representing the path, or None if no path exists.
     """
     if heuristic is None:
-        heuristic = h_manhattan  # default spatial heuristic
+        heuristic = h_manhattan
 
-    # early exit: agent is already at goal
+    heuristic_function_c = HEURISTICS_LOW_L[conflict_heuristic]
+
+    # early exit: agent already at goal
     if not extended and start == goal:
         return [start]
     if extended and G.nodes[start]["original_id"] == goal:
         return [start]
 
-    # in extended mode, goal_ref is the expanded node (goal_original_id, t=0)
-    # used to retrieve spatial coordinates for the heuristic
     if extended:
         goal_ref = next((nid for nid, d in G.nodes(data=True)
                          if d["original_id"] == goal and d["t"] == 0), None)
         if goal_ref is None:
-            return None  # goal node does not exist in the expanded graph
+            return None  # goal does not exist in the expanded graph
     else:
-        goal_ref = goal  # standard mode: goal_ref is goal itself
+        goal_ref = goal  # standard mode: goal_ref is the goal node itself
+
+    # --- data structures ---
 
     # node_to_predecessor[n] = predecessor of n on the current best path from start
-    # used to reconstruct the path once the goal is reached
     node_to_predecessor = {}
 
     # g[n]: best known travel cost from start to n
     g = {start: 0}
 
     # g_c[n]: accumulated congestion cost along the best known path from start to n
-    # counts how many other agents occupy the nodes visited so far
-    g_c = {start: congestion_dict.get(start, 0)}
+    # incremented by congestion_dict[n] each time n is reached via a better path
+    g_c = {start: heuristic_function_c(0, start, congestion_dict)}
 
-    # f[n] = g[n] + h(n): estimated total cost from start to goal through n
+    # f[n] = g[n] + h(n,goal): estimated total travel cost from start to goal through n
     f = {start: heuristic(G, start, goal_ref)}
 
+    # OPEN: list of (f, g_c, node) entries
+    open_list = [(f[start], g_c[start], start)]
 
-    # use a dictionary for saving node to be explored (dictionary is chosen since is necessary to know to extract elements not necessarily in the first position)
-    open_dict = {start: (f[start], g_c[start])}
+    while open_list:
 
-    while open_dict:
 
-        # find f_min: lowest f value currently in OPEN dict
-        f_min = open_dict[next(iter(open_dict))][0]
-        for st in open_dict:
-            if open_dict[st][0] <= f_min:
-                f_min = open_dict[st][0]
+        # f_min: lowest f value currently in OPEN
+        min_tuple = min(open_list, key=lambda t: t[0])
+        f_min = min_tuple[0]
 
-        # threshold: any node in OPEN with f <= w * f_min enters FOCAL
         threshold = f_min * w
 
-        # Use a heap for the focal: extract the lowest element respect to g_c
-        focal = [] 
-        for node in open_dict: 
-            if f[node] <= threshold: 
-                heapq.heappush(focal, (g_c[node], node))
+        # build FOCAL: nodes within the suboptimality bound, ordered by g_c
+        focal = get_focal_list(open_list, threshold)
 
-        # remove from focal the best node in term of g_c
-        _, current = heapq.heappop(focal)
-        
-        # remove from open the best node
-        open_dict.pop(current, None)
-        f_current = f[current]
+        # extract node with lowest g_c from FOCAL
+        f_current, g_c_current, current = focal.pop(0)
 
-        # skip outdated entries (duplicates with higher cost)
         if f_current > f.get(current, float("inf")):
             continue
+        
+        # remove current from OPEN
+        open_list.remove((f_current, g_c_current, current))    # delete from set of open heap
+        #print("delete from list:")
+        #print((f_current, g_c_current, current))
 
-        # goal check
+        # goal check 
         if extended and G.nodes[current]["original_id"] == goal:
             return reconstruct_path(node_to_predecessor, current)
         if not extended and current == goal:
@@ -180,21 +191,50 @@ def a_star_with_focal_search(G: NetworkGraph, start: int, goal: int, congestion_
         # expand current: explore all outgoing edges
         for _, neighbor, edge_attrs in G.out_edges(current, data=True):
 
-            # tentative cost to reach neighbor through current
+            # tentative travel cost to reach neighbor through current
             possible_g = g[current] + edge_attrs["weight"]
 
-            # only update if a better path to neighbor is found
+            # update only if a better path to neighbor is found
             if possible_g < g.get(neighbor, float("inf")):
 
-                node_to_predecessor[neighbor] = current  # record best predecessor
-                g[neighbor] = possible_g                 # update best travel cost
-                f[neighbor] = possible_g + heuristic(G, neighbor, goal_ref)  # update f score
+                # remove old entry for neighbor from OPEN if present
+                old_entry = (f.get(neighbor), g_c.get(neighbor), neighbor)
+                if old_entry in open_list:
+                    open_list.remove(old_entry)
 
-                # accumulate congestion: add occupancy of neighbor by other agents
-                g_c[neighbor] = g_c[current] + congestion_dict.get(neighbor, 0)
-                # add new nodes to be explored
-                open_dict[neighbor] = (f[neighbor], g_c[neighbor])
-    return None  # no path found
+                node_to_predecessor[neighbor] = current  # record best predecessor
+                g[neighbor]   = possible_g               # update best travel cost
+                f[neighbor]   = possible_g + heuristic(G, neighbor, goal_ref)  # update f
+
+                # g_c propagates the total number of conflicts along the path
+                g_c[neighbor] = heuristic_function_c(g_c[current], neighbor, congestion_dict)
+
+                # push to OPEN — duplicates handled by lazy deletion via expanded set
+                open_list.append((f[neighbor], g_c[neighbor], neighbor))
+                #print(open_list)
+
+    return None  # OPEN exhausted: no path exists
+
+
+def get_focal_list(listt: list, threshold: float) -> list:
+    """
+    Builds the FOCAL list from OPEN for focal search.
+    Filters OPEN to include only nodes with f <= threshold (within the
+    suboptimality bound), then sorts by (g_c, f) so the node with the
+    lowest conflict cost is first.
+    Args:
+        open_list: OPEN as a list of (f, g_c, node) entries
+        threshold: maximum f value to enter FOCAL (= w * f_min)
+    Returns:
+        sorted list of eligible entries ordered by (g_c, f)
+    """
+    focal_list = []
+    for f_score, g_c_score, node in listt:
+        if f_score <= threshold:
+            focal_list.append((f_score, g_c_score, node))
+    focal_list.sort(key=lambda x: (x[1], x[0]))
+    return focal_list
+
 
 
 def h_euclidean(G: NetworkGraph, n: int, goal_node: int) -> float:
@@ -232,16 +272,14 @@ def h_manhattan(G: NetworkGraph, n: int, goal_node: int) -> float:
 
 def reconstruct_path(node_to_predecessor, current):
     """
-    Function use in A star function.
-    Reconstruct the optimal path from start to current node.
-    Follows the predecessor chain stored in node_to_predecessor
-    until the start node is reached.
-    
+    Reconstructs the optimal path from start to current by following
+    the predecessor chain stored during A* expansion.
+
     Args:
-        node_to_predecessor: dictionary mapping each node to its predecessor
-        current: goal node from which to start backtracking
+        node_to_predecessor: dict {node: predecessor} built during search
+        current: goal node from which to backtrack
     Returns:
-        list of node ids from start to goal that identify the shortest path
+        list of node ids from start to goal (inclusive)
     """
     total_path = []
     while current in node_to_predecessor:

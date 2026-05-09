@@ -1,71 +1,141 @@
 from Network_graph import NetworkGraph
 
-def time_expansion_graph_with_constr(G: NetworkGraph, T: int, vertex_constraints = None, edge_constraints = None) -> NetworkGraph:
+
+def create_edges_constraints(diz_swaps, edge_constraints_set_of_sets):
     """
-    Build a time-expanded graph from a standard NetworkGraph.
+    Expands a set of edge constraints by adding the swap-pair inverse of each edge.
+    In a time-expanded graph, forbidding a move edge (u_t, v_t+1) must also
+    forbid the reverse move (v_t, u_t+1) to prevent swap conflicts — two agents
+    exchanging positions in the same timestep interval. This function enforces
+    that symmetry automatically using the precomputed swap_pairs dictionary.
 
-    Each node in G is replicated T times (one per timestep), creating
-    a layered graph where movement across time is explicit.
-    Two types of edges are created:
-    - wait edges: same node at t -> same node at t+1 (agent stays in place)
-    - move edges: node at t -> adjacent node at t+1 (agent moves)
+    Args:
+        diz_swaps: swap_pairs dict from build_teg_mappings: {(u_t, v_t+1): (v_t, u_t+1), ...}
+        edge_constraints_set_of_sets: set of (src, dst) expanded edge pairs to forbid.
+    Returns:
+        expanded set of edge constraints including swap-pair inverses
+    """
+    if edge_constraints_set_of_sets is None:
+        return set()
+    edge_constraints_final = set()
+    for (src, dst) in edge_constraints_set_of_sets:
+        edge_constraints_final.add((src, dst))
+        if (src, dst) in diz_swaps:
+            # add the swap-pair inverse if it exists in the original graph
+            # (only bidirectional edges have a swap pair)
+            edge_constraints_final.add(diz_swaps[(src, dst)])
+    return edge_constraints_final
 
-    This function provide the possibility to force two type of constraint:
-    - Node constraint: a node of the extended-time graph can't be used -> in-edges and out-edges are removed 
-    - Edge constraint: an edge of the extended-time graph can't be used -> edge removed
-    Actually, the graph extended-time is built from scratch taking into consideration this constraints.
-    This constraints appear in MAPF solver that exploits extended-time graph. Indeed this two type of constraint are the two classical ones.
-    Note: node indices in G must be consecutive starting from 0.
+
+def build_teg_mappings(G: NetworkGraph, T: int) -> tuple:
+    """
+    Precomputes the node id mapping and swap pairs for a time-expanded graph,
+    without constructing the graph itself.
+    This is called once per TEG instantiation to obtain the structural data
+    needed before applying constraints.
+
+    Node id mapping: 
+    Expanded node ids are assigned sequentially: expanded_id = original_id * T + t
+    This formula is deterministic and enables the static conversion methods TimeExpandedGraph.compute_expanded_id / compute_original_id to work without a TEG instance.
+    Requires: node ids in G must be consecutive integers starting from 0.
+
+    Swap pairs:
+    For each move edge (u, v) in G and each timestep t, the move (u_t -> v_t+1) has a possible swap counterpart (v_t -> u_t+1).
+    Both directions are registered only if the reverse edge (v, u) exists in the original graph (the graph is bidirectional there).
+
+    Args:
+        G: original directed NetworkGraph with consecutive integer node ids
+        T: number of timesteps in the time-expanded graph
+    Returns:
+        old_id_to_new: list where old_id_to_new[original_id][t] = expanded_id
+        swap_pairs:    dict {(u_t, v_t+1): (v_t, u_t+1)} for all move edges
+    """
+    old_id_to_new = []
+    swap_pairs = {}
+    count = 0        # sequential expanded id counter
+
+    # build node id mapping: one expanded id per (original_node, timestep) pair
+    for id_n, _ in G.nodes(data=True):
+        expanded = []
+        for t in range(T):
+            expanded.append(count)
+            count += 1
+        old_id_to_new.append(expanded)
+
+    # build swap pairs: for each directed edge (src, dst) and each timestep t,
+    # register the move arc and its temporal swap counterpart
+    for src, dst, _ in G.edges(data=True):
+        for t in range(T - 1):
+            u_t  = old_id_to_new[src][t]
+            v_t1 = old_id_to_new[dst][t + 1]
+            v_t  = old_id_to_new[dst][t]
+            u_t1 = old_id_to_new[src][t + 1]
+
+            # forward arc -> its swap counterpart
+            swap_pairs[(u_t, v_t1)] = (v_t, u_t1)
+
+            # reverse arc -> its swap counterpart (only if reverse edge exists)
+            if G.has_edge(dst, src):
+                swap_pairs[(v_t, u_t1)] = (u_t, v_t1)
+
+    return old_id_to_new, swap_pairs
+
+
+def time_expansion_graph_with_constr(G: NetworkGraph, T: int, old_id_to_new: list, vertex_constraints: set = None, edge_constraints: set = None) -> NetworkGraph:
+    """
+    Builds the time-expanded graph (TEG).
+    All possible nodes outside the ones restricted for constraints are added
+    Two edge types are added:
+    - Wait edges:  (node, t) -> (node, t+1)  — agent stays in place for one timestep
+    - Move edges:  (u, t) -> (v, t+1)     — agent moves from u to v in one timestep
+
+    Constraints are enforced by omitting forbidden nodes and edges during construction:
+    - Vertex constraints: expanded node ids to exclude — their incident edges are also omitted
+    - Edge constraints:   (src, dst) expanded edge pairs to exclude
+    Note: edge constraints should already include swap-pair inverses at this point.
 
     Args:
         G: original directed NetworkGraph
-        T_lowerbound: minimum number of timesteps (T = T_lowerbound + delta_t)   DA MIGLIORARE 
-        vertex_constraints: set of node ids in time-extended graph that cannot be visited
-        edge_constraints: set of (src, dst) expanded edge pairs in time-extended graph that cannot be used
+        T: number of timesteps
+        old_id_to_new: precomputed mapping from build_teg_mappings
+        vertex_constraints: set of expanded node ids to exclude (default: empty)
+        edge_constraints: set of (src, dst) expanded edge pairs to exclude (default: empty)
     Returns:
-        time-expanded NetworkGraph with wait and move edges satisfying the constraints
+        time-expanded NetworkGraph with wait and move edges respecting all constraints
     """
-
     if vertex_constraints is None:
         vertex_constraints = set()
     if edge_constraints is None:
         edge_constraints = set()
+
     G_expanded = NetworkGraph()
 
-     # mapping from original node id to list of expanded node ids (one per number of timestep T)
-    old_id_to_new_list = []  
-
-    count = 0   # helps in creating new node ids
-
+    # --- add nodes and wait edges ---
     for id_n, node_attrs in G.nodes(data=True):
-        new_di_nodes_from_id_n_expansion = []   # list of expanded nodes for id_n
-
-        for t in range(0,T):
-            # append count in anycase to keep mapping consistent
-            new_di_nodes_from_id_n_expansion.append(count)
+        for t in range(T):
+            count = old_id_to_new[id_n][t]
             if count not in vertex_constraints:
-                # create expanded node with spatial coords, timestep and original id
-                new_node_from_id_n_attr = {"x": node_attrs["x"], "y": node_attrs["y"], "t": t, "original_id": id_n}
-                G_expanded.add_node(count, **new_node_from_id_n_attr)
-            count = count + 1
-
-            # add wait edge from t-1 to t if not forbidden by constraints
+                # add node only if not under vertex constraint
+                G_expanded.add_node(count, x=node_attrs["x"], y=node_attrs["y"], t=t, original_id=id_n)
+            # add wait edge from t-1 to t if both endpoints
             if t > 0:
-                node_prev = new_di_nodes_from_id_n_expansion[t-1]   # count
-                node_curr = new_di_nodes_from_id_n_expansion[t]     # count + 1
-                if node_curr not in vertex_constraints and node_prev not in vertex_constraints and (node_prev, node_curr) not in edge_constraints and (node_curr, node_prev) not in edge_constraints:
-                    G_expanded.add_edge(node_prev, node_curr, weight=1, type_edge="wait")  
+                node_prev = old_id_to_new[id_n][t - 1]
+                node_curr = old_id_to_new[id_n][t]
+                if node_curr not in vertex_constraints and node_prev not in vertex_constraints and (node_prev, node_curr) not in edge_constraints:
+                    # wait edges
+                    G_expanded.add_edge(node_prev, node_curr, weight=1, type_edge="wait")
 
-        old_id_to_new_list.append(new_di_nodes_from_id_n_expansion)
-
-    # add move edges: src at t -> dst at t+1 if not forbidden by constraints
+    # --- add move edges ---
     for src, dst, edge_attrs in G.edges(data=True):
-        new_nodes_correspondent_to_src = old_id_to_new_list[src]
-        new_nodes_correspondent_to_dst = old_id_to_new_list[dst]
-        for t in range(0,T-1):
-            node_t_src = new_nodes_correspondent_to_src[t]
-            node_tplus1_dst =  new_nodes_correspondent_to_dst[t+1]
-            if node_tplus1_dst not in vertex_constraints and node_t_src not in vertex_constraints and (node_t_src, node_tplus1_dst) not in edge_constraints and (node_tplus1_dst, node_t_src) not in edge_constraints:
-                G_expanded.add_edge(node_t_src, node_tplus1_dst, weight = 1, type_edge="move")
-    return G_expanded, old_id_to_new_list
+        for t in range(T - 1):
+            # move edges
+            u_t  = old_id_to_new[src][t]
+            v_t1 = old_id_to_new[dst][t + 1]
+            # add move edge only if both endpoints and the edge are allowed
+            if u_t not in vertex_constraints and v_t1 not in vertex_constraints and (u_t, v_t1) not in edge_constraints:
+                G_expanded.add_edge(u_t, v_t1, weight=1, type_edge="move")
+
+    return G_expanded
+
+
 

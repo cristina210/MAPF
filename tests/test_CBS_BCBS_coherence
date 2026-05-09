@@ -1,0 +1,78 @@
+"""
+Test: compare CBS vs BCBS(w_l=1, w_h=1) over N random instances.
+Verifies that both find conflict-free solutions with the same sum-of-costs.
+"""
+import sys, os, random
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from graph_utils.upload_graph import make_grid_graph
+from fleet_utils.upload_fleet import make_random_fleet
+from instance import MAPFInstance
+from MAPF_algorithm.solvers.CBS import CBSSolver
+from MAPF_algorithm.solvers.BCBS import BCBSSolver
+from results_handler import verify_solution
+
+N_ITER = 50
+N_AGENTS  = 8
+GRID_ROWS = 4
+GRID_COLS = 4
+
+stats = {"ok": 0, "diff_cost": 0, "cbs_conflicts": 0,
+         "bcbs_conflicts": 0, "cbs_failed": 0, "bcbs_failed": 0}
+
+for i in range(N_ITER):
+    print(i)
+    random.seed(i)
+    G        = make_grid_graph(rows=GRID_ROWS, cols=GRID_COLS, step=1.0)
+    fleet    = make_random_fleet(G, num_agents=N_AGENTS)
+    T        = MAPFInstance(graph=G, fleet=fleet).T
+
+    result_cbs  = CBSSolver(G, T).plan(fleet)
+    result_bcbs = BCBSSolver(G, T, w_l=1, w_h=1).plan(fleet)
+
+    if not result_cbs.success:
+        stats["cbs_failed"] += 1
+        print(f"[{i:03d}] CBS failed")
+        continue
+
+    if not result_bcbs.success:
+        stats["bcbs_failed"] += 1
+        print(f"[{i:03d}] BCBS failed")
+        continue
+
+    cbs_valid,  cbs_conf  = verify_solution(result_cbs)
+    bcbs_valid, bcbs_conf = verify_solution(result_bcbs)
+
+    if not cbs_valid:
+        stats["cbs_conflicts"] += 1
+        print(f"[{i:03d}] BUG CBS {len(cbs_conf)} conflict(s): {cbs_conf}")
+        continue
+
+    if not bcbs_valid:
+        stats["bcbs_conflicts"] += 1
+        print(f"[{i:03d}] BUG BCBS {len(bcbs_conf)} conflict(s): {bcbs_conf}")
+        continue
+
+    cost_cbs  = result_cbs.cumulative_time_total()
+    cost_bcbs = result_bcbs.cumulative_time_total()
+
+    if cost_cbs != cost_bcbs:
+        stats["diff_cost"] += 1
+        print(f"[{i:03d}] BUG cost CBS={cost_cbs} BCBS={cost_bcbs}")
+        for agent in fleet.agents.values():
+            pc, pe = result_cbs.path_original_for(agent.id), result_bcbs.path_original_for(agent.id)
+            if pc != pe:
+                print(f"       agent {agent.id}: CBS={pc} BCBS={pe}")
+    else:
+        stats["ok"] += 1
+
+print(f"\n{'='*55}")
+print(f"  RESULTS over {N_ITER} iterations ({N_AGENTS} agents, {GRID_ROWS}x{GRID_COLS})")
+print(f"{'='*55}")
+for k, v in stats.items():
+    print(f"  {k:<25}: {v}")
+
+if stats["diff_cost"] == 0 and stats["cbs_conflicts"] == 0 and stats["bcbs_conflicts"] == 0:
+    print("\n  CBS and BCBS(w_l=1, w_h=1) are consistent.")
+else:
+    print("\n  Inconsistencies found — check output above.")

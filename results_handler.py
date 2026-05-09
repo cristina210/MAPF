@@ -1,5 +1,76 @@
 from tabulate import tabulate
 
+def _format_table(headers, rows):
+    return tabulate(rows, headers=headers, tablefmt="grid")
+
+
+def verify_solution(result: PlanResult) -> tuple[bool, list]:
+    """
+    Verifies that a MAPF solution is conflict-free.
+
+    Agents disappear once they reach their goal:
+    after time t >= len(path), they are no longer considered in the system.
+
+    Checks:
+    - vertex conflicts (same node at same timestep)
+    - edge conflicts (swap between t and t+1), only if both agents exist at both times
+
+    Args:
+        result: PlanResult containing the planned paths in original node ids
+    Returns:
+        (True, [])                if no conflicts are found
+        (False, conflict_list)    if conflicts are found, where each entry is a dict:
+            {
+                "type":     "vertex" or "edge",
+                "agents":   (ai, aj),
+                "timestep": t,
+                "nodes":    (vi,)        for vertex conflicts,
+                            (vi, vj)     for edge conflicts
+            }
+    """
+    paths = result.paths_original
+    agent_ids = list(paths.keys())
+    conflicts = []
+
+    for i in range(len(agent_ids)):
+        for j in range(i + 1, len(agent_ids)):
+            ai, aj = agent_ids[i], agent_ids[j]
+            path_i, path_j = paths[ai], paths[aj]
+            max_t = max(len(path_i), len(path_j))
+
+            for t in range(max_t):
+
+                # both agents must exist at time t
+                if t >= len(path_i) or t >= len(path_j):
+                    continue
+
+                vi = path_i[t]
+                vj = path_j[t]
+
+                # vertex conflict
+                if vi == vj:
+                    conflicts.append({
+                        "type":     "vertex",
+                        "agents":   (ai, aj),
+                        "timestep": t,
+                        "nodes":    (vi,),
+                    })
+
+                # edge conflict: both agents must exist at t+1
+                if (t + 1 < len(path_i)) and (t + 1 < len(path_j)):
+                    vi_next = path_i[t + 1]
+                    vj_next = path_j[t + 1]
+                    if vi == vj_next and vj == vi_next:
+                        conflicts.append({
+                            "type":     "edge",
+                            "agents":   (ai, aj),
+                            "timestep": t,
+                            "nodes":    (vi, vj),
+                        })
+
+    return (len(conflicts) == 0), conflicts
+
+
 
 def build_single_agent_rows(agent, graph, solvers: dict):
     """
@@ -61,88 +132,77 @@ def build_aggregate_rows(graph, solvers: dict):
     return headers, rows
 
 
+def _write_comparison(instance, solvers: dict, write):
+
+    # pre-compute conflict check for each solver
+    validity = {name: verify_solution(result) for name, result in solvers.items()}
+
+    write("\n")
+    write("=" * 70 + "\n")
+    write("  PER-AGENT RESULTS\n")
+    write("=" * 70 + "\n")
+
+    for agent in instance.fleet.agents.values():
+        write(f"\n  Agent {agent.id}  |  {agent.start} -> {agent.goal}\n")
+        headers, rows = build_single_agent_rows(agent, instance.graph, solvers)
+        write(_format_table(headers, rows) + "\n")
+
+    write("\n")
+    write("=" * 70 + "\n")
+    write("  AGGREGATE RESULTS\n")
+    write("=" * 70 + "\n")
+    headers, rows = build_aggregate_rows(instance.graph, solvers)
+    write(_format_table(headers, rows) + "\n")
+
+    write("\n")
+    write("=" * 70 + "\n")
+    write("  SOLUTION VALIDITY\n")
+    write("=" * 70 + "\n")
+    for algo_name, (is_valid, conflicts) in validity.items():
+        if is_valid:
+            write(f"\n  {algo_name:<20}: OK - no conflicts found\n")
+        else:
+            write(f"\n  {algo_name:<20}: FAIL - {len(conflicts)} conflict(s) detected\n")
+            for c in conflicts:
+                agents_str = f"agents {c['agents'][0]} and {c['agents'][1]}"
+                time_str   = f"t={c['timestep']}"
+                if c["type"] == "vertex":
+                    write(f"    [vertex] {agents_str} at node {c['nodes'][0]} at {time_str}\n")
+                else:
+                    write(f"    [edge]   {agents_str} swapping nodes {c['nodes'][0]}<->{c['nodes'][1]} at {time_str}\n")
+
+    write("\n")
+    write("=" * 70 + "\n")
+    write("  SOLVER STATISTICS\n")
+    write("=" * 70 + "\n")
+    for algo_name, result in solvers.items():
+        write(f"\n  {algo_name}:\n")
+        for key, val in result.solver_stats.items():
+            write(f"    {key.replace('_', ' ').capitalize():<35}: {val}\n")
+
 
 def print_comparison(instance, solvers: dict):
     """
-    Prints a full comparison of multiple MAPF solvers on a given instance.
-    The output is structured in three blocks:
-    1. Per-agent results (detailed comparison per agent)
-    2. Aggregate results (global metrics per solver)
-    3. Solver statistics (runtime and internal metrics)
+    Prints the full comparison to stdout.
 
     Args:
-        instance: MAPF instance containing graph and fleet
-        solvers: dictionary mapping solver names to PlanResult objects
+        instance: MAPFInstance
+        solvers:  ordered dict {"A* Naive": result_astar, "PP": result_PP, ...}
     """
-
-    print()
-    print("=" * 70)
-    print("  PER-AGENT RESULTS")
-    print("=" * 70)
-
-    for agent in instance.fleet.agents.values():
-        print(f"\n  Agent {agent.id}  |  {agent.start} → {agent.goal}")
-        headers, rows = build_single_agent_rows(agent, instance.graph, solvers)
-        print(tabulate(rows, headers=headers, tablefmt="rounded_outline"))
-
-    print()
-    print("=" * 70)
-    print("  AGGREGATE RESULTS")
-    print("=" * 70)
-    headers, rows = build_aggregate_rows(instance.graph, solvers)
-    print(tabulate(rows, headers=headers, tablefmt="rounded_outline"))
-
-    print()
-    print("=" * 70)
-    print("  SOLVER STATISTICS")
-    print("=" * 70)
-    for algo_name, result in solvers.items():
-        print(f"\n  {algo_name}:")
-        for key, val in result.solver_stats.items():
-            print(f"    {key.replace('_', ' ').capitalize():<35}: {val}")
-
+    _write_comparison(instance, solvers, write=lambda s: print(s, end=""))
 
 
 def save_comparison(instance, solvers: dict, filepath: str = "results.txt"):
     """
-    Saves the same comparison produced in print_comparison to a text file.
-    Structure mirrors console output:
-    - per-agent tables
-    - aggregate metrics
-    - solver statistics
+    Saves the full comparison to a text file.
 
     Args:
-        instance: MAPF instance
-        solvers: solver results dictionary
+        instance: MAPFInstance
+        solvers:  ordered dict {"A* Naive": result_astar, "PP": result_PP, ...}
         filepath: output file path
     """
     with open(filepath, "w", encoding="utf-8") as f:
-
-        f.write("\n")
-        f.write("=" * 70 + "\n")
-        f.write("  PER-AGENT RESULTS\n")
-        f.write("=" * 70 + "\n")
-
-        for agent in instance.fleet.agents.values():
-            f.write(f"\n  Agent {agent.id}  |  {agent.start} → {agent.goal}\n")
-            headers, rows = build_single_agent_rows(agent, instance.graph, solvers)
-            f.write(tabulate(rows, headers=headers, tablefmt="rounded_outline") + "\n")
-
-        f.write("\n")
-        f.write("=" * 70 + "\n")
-        f.write("  AGGREGATE RESULTS\n")
-        f.write("=" * 70 + "\n")
-        headers, rows = build_aggregate_rows(instance.graph, solvers)
-        f.write(tabulate(rows, headers=headers, tablefmt="rounded_outline") + "\n")
-
-        f.write("\n")
-        f.write("=" * 70 + "\n")
-        f.write("  SOLVER STATISTICS\n")
-        f.write("=" * 70 + "\n")
-        for algo_name, result in solvers.items():
-            f.write(f"\n  {algo_name}:\n")
-            for key, val in result.solver_stats.items():
-                f.write(f"    {key.replace('_', ' ').capitalize():<35}: {val}\n")
+        _write_comparison(instance, solvers, write=f.write)
 
 
 def save_instance(instance, filepath: str = "instance.txt"):
