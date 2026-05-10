@@ -24,7 +24,7 @@ class MAPFInstance:
         self.name = name
         # compute T min as the longest shortest path
         self.T_min = self._compute_T_min()
-        self.T = self.T_min + self.fleet.num_agents() + round(len(self.graph.nodes)/(len(self.graph.nodes) - self.fleet.num_agents()))
+        self.T = self.T_min + self.fleet.num_agents() + round(len(self.graph.edges)/(len(self.graph.edges) - self.fleet.num_agents()))
 
         self._validate()
     

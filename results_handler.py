@@ -1,13 +1,12 @@
-from tabulate import tabulate
+from MAPF_algorithm.plan_result import PlanResult
+from instance import MAPFInstance
+from extended_time_graph import TimeExpandedGraph
 
-def _format_table(headers, rows):
-    return tabulate(rows, headers=headers, tablefmt="grid")
 
 
 def verify_solution(result: PlanResult) -> tuple[bool, list]:
     """
     Verifies that a MAPF solution is conflict-free.
-
     Agents disappear once they reach their goal:
     after time t >= len(path), they are no longer considered in the system.
 
@@ -19,14 +18,7 @@ def verify_solution(result: PlanResult) -> tuple[bool, list]:
         result: PlanResult containing the planned paths in original node ids
     Returns:
         (True, [])                if no conflicts are found
-        (False, conflict_list)    if conflicts are found, where each entry is a dict:
-            {
-                "type":     "vertex" or "edge",
-                "agents":   (ai, aj),
-                "timestep": t,
-                "nodes":    (vi,)        for vertex conflicts,
-                            (vi, vj)     for edge conflicts
-            }
+        (False, conflict_list)    if conflicts are found.
     """
     paths = result.paths_original
     agent_ids = list(paths.keys())
@@ -49,171 +41,106 @@ def verify_solution(result: PlanResult) -> tuple[bool, list]:
 
                 # vertex conflict
                 if vi == vj:
-                    conflicts.append({
-                        "type":     "vertex",
-                        "agents":   (ai, aj),
-                        "timestep": t,
-                        "nodes":    (vi,),
-                    })
+                    conflicts.append({"type": "vertex","agents": (ai, aj), "timestep": t,"nodes":  (vi,) })
 
                 # edge conflict: both agents must exist at t+1
                 if (t + 1 < len(path_i)) and (t + 1 < len(path_j)):
                     vi_next = path_i[t + 1]
                     vj_next = path_j[t + 1]
                     if vi == vj_next and vj == vi_next:
-                        conflicts.append({
-                            "type":     "edge",
-                            "agents":   (ai, aj),
-                            "timestep": t,
-                            "nodes":    (vi, vj),
-                        })
+                        conflicts.append({"type": "edge", "agents": (ai, aj), "timestep": t, "nodes":  (vi, vj)})
 
     return (len(conflicts) == 0), conflicts
 
 
 
-def build_single_agent_rows(agent, graph, solvers: dict):
-    """
-    Builds a comparison table for a single agent across multiple solvers.
 
-    Each row corresponds to one algorithm and reports:
-    - temporal path length (steps in expanded/time sense)
-    - spatial distance/weight on the graph
-    - overhead relative to a baseline solver
-    - actual path representation
-    """
-    headers = ["Algorithm", "Steps", "Distance/Weight", "Overhead", "Path"]
-    rows = []
+def _build_per_agent_rows(agent, G_original, solvers: dict) -> tuple:
+    headers = ["Algorithm", "Steps", "Distance", "Cost","Overhead steps", "Overhead cost", "Path"]
+    rows    = []
 
-    # primo solver come baseline per l'overhead (tipicamente A*)
     baseline_name  = next(iter(solvers))
     baseline_steps = solvers[baseline_name].path_length_time(agent.id)
+    baseline_cost  = solvers[baseline_name].compute_path_cost(agent.id, G_original)
 
     for algo_name, result in solvers.items():
         steps = result.path_length_time(agent.id)
-        dist  = result.path_length_space(agent.id, graph)
+        dist  = result.path_length_space(agent.id, G_original)
+        cost  = result.compute_path_cost(agent.id, G_original)
         path  = result.path_original_for(agent.id)
 
-        if steps is not None and baseline_steps is not None and algo_name != baseline_name:
-            overhead = f"+{steps - baseline_steps}"
+        if algo_name == baseline_name:
+            overhead_steps = "—"
+            overhead_cost  = "—"
         else:
-            overhead = "—"
+            overhead_steps = (f"+{steps - baseline_steps}" if steps is not None and baseline_steps is not None else "—")
+            overhead_cost  = (f"+{cost - baseline_cost:.2f}" if cost is not None and baseline_cost is not None else "—")
 
-        rows.append([
-            algo_name,
-            steps    if steps is not None else "—",
-            f"{dist:.2f}" if dist is not None else "—",
-            overhead,
-            path     if path is not None else "unreachable",
-        ])
+        rows.append([ algo_name, steps if steps is not None else "—",  f"{dist:.2f}"  if dist  is not None else "—", f"{cost:.2f}"  if cost  is not None else "—", overhead_steps,
+            overhead_cost, path if path  is not None else "unreachable"])
 
     return headers, rows
 
 
-def build_aggregate_rows(graph, solvers: dict):
-    """
-    Builds a global comparison table across all solvers.
-    Reports aggregate metrics:
-    - makespan: total completion time of all agents
-    - total temporal cost (sum of path times)
-    - total spatial cost (sum of path lengths/weights on graph)
-    """
-    headers = ["Algorithm", "Makespan", "Total Steps", "Total Distance/Weight"]
-    rows = []
+def _build_aggregate_rows(G_original, solvers: dict) -> tuple:
+    headers = ["Algorithm", "Makespan", "Total steps","Total distance", "Total cost"]
+    rows    = []
 
     for algo_name, result in solvers.items():
-        rows.append([
-            algo_name,
-            result.makespan(),
-            result.cumulative_time_total(),
-            f"{result.total_path_length_space(graph):.2f}",
-        ])
+        rows.append([algo_name,result.makespan(),result.cumulative_time_total(),f"{result.total_path_length_space(G_original):.2f}",f"{result.total_cost(G_original):.2f}" ])
 
     return headers, rows
 
 
-def _write_comparison(instance, solvers: dict, write):
-
-    # pre-compute conflict check for each solver
+def _write_comparison(instance, solvers: dict, write) -> None:
     validity = {name: verify_solution(result) for name, result in solvers.items()}
 
-    write("\n")
-    write("=" * 70 + "\n")
-    write("  PER-AGENT RESULTS\n")
-    write("=" * 70 + "\n")
-
+    # Per-agent results 
+    write("\n" + "=" * 70 + "\n  PER-AGENT RESULTS\n" + "=" * 70 + "\n")
     for agent in instance.fleet.agents.values():
         write(f"\n  Agent {agent.id}  |  {agent.start} -> {agent.goal}\n")
-        headers, rows = build_single_agent_rows(agent, instance.graph, solvers)
+        headers, rows = _build_per_agent_rows( agent, instance.graph, solvers)
         write(_format_table(headers, rows) + "\n")
 
-    write("\n")
-    write("=" * 70 + "\n")
-    write("  AGGREGATE RESULTS\n")
-    write("=" * 70 + "\n")
-    headers, rows = build_aggregate_rows(instance.graph, solvers)
+    #  Aggregate results 
+    write("\n" + "=" * 70 + "\n  AGGREGATE RESULTS\n" + "=" * 70 + "\n")
+    headers, rows = _build_aggregate_rows(instance.graph, solvers)
     write(_format_table(headers, rows) + "\n")
 
-    write("\n")
-    write("=" * 70 + "\n")
-    write("  SOLUTION VALIDITY\n")
-    write("=" * 70 + "\n")
+    #  Solution validity 
+    write("\n" + "=" * 70 + "\n  SOLUTION VALIDITY\n" + "=" * 70 + "\n")
     for algo_name, (is_valid, conflicts) in validity.items():
         if is_valid:
-            write(f"\n  {algo_name:<20}: OK - no conflicts found\n")
+            write(f"\n  {algo_name:<20}: OK — no conflicts found\n")
         else:
-            write(f"\n  {algo_name:<20}: FAIL - {len(conflicts)} conflict(s) detected\n")
+            write(f"\n  {algo_name:<20}: FAIL — {len(conflicts)} conflict(s)\n")
             for c in conflicts:
-                agents_str = f"agents {c['agents'][0]} and {c['agents'][1]}"
-                time_str   = f"t={c['timestep']}"
+                a1, a2 = c['agents']
                 if c["type"] == "vertex":
-                    write(f"    [vertex] {agents_str} at node {c['nodes'][0]} at {time_str}\n")
+                    write(f"[vertex] agents {a1},{a2} at node {c['nodes'][0]} t={c['timestep']}\n")
                 else:
-                    write(f"    [edge]   {agents_str} swapping nodes {c['nodes'][0]}<->{c['nodes'][1]} at {time_str}\n")
+                    write(f"[edge]  agents {a1},{a2} swap {c['nodes'][0]}<->{c['nodes'][1]} t={c['timestep']}\n")
 
-    write("\n")
-    write("=" * 70 + "\n")
-    write("  SOLVER STATISTICS\n")
-    write("=" * 70 + "\n")
+    # ── Solver statistics ──────────────────────────────────────────────────────
+    write("\n" + "=" * 70 + "\n  SOLVER STATISTICS\n" + "=" * 70 + "\n")
     for algo_name, result in solvers.items():
         write(f"\n  {algo_name}:\n")
-        for key, val in result.solver_stats.items():
-            write(f"    {key.replace('_', ' ').capitalize():<35}: {val}\n")
+        for key, val in (result.solver_stats or {}).items():
+            write(f" {key.replace('_',' ').capitalize():<35}: {val}\n")
 
 
-def print_comparison(instance, solvers: dict):
-    """
-    Prints the full comparison to stdout.
-
-    Args:
-        instance: MAPFInstance
-        solvers:  ordered dict {"A* Naive": result_astar, "PP": result_PP, ...}
-    """
+def print_comparison(instance, solvers: dict) -> None:
     _write_comparison(instance, solvers, write=lambda s: print(s, end=""))
 
 
-def save_comparison(instance, solvers: dict, filepath: str = "results.txt"):
-    """
-    Saves the full comparison to a text file.
-
-    Args:
-        instance: MAPFInstance
-        solvers:  ordered dict {"A* Naive": result_astar, "PP": result_PP, ...}
-        filepath: output file path
-    """
+def save_comparison(instance, solvers: dict,
+                    filepath: str = "results.txt") -> None:
     with open(filepath, "w", encoding="utf-8") as f:
         _write_comparison(instance, solvers, write=f.write)
 
 
-def save_instance(instance, filepath: str = "instance.txt"):
-    """
-    Saves main characteristics of MAPF instance in text file.
 
-    Includes:
-    - graph structure (nodes, edges, coordinates, weights)
-    - time horizon information
-    - fleet description (agents, start/goal positions, state)
-    """
+def save_instance(instance, filepath: str = "instance.txt"):
     with open(filepath, "w", encoding="utf-8") as f:
 
         f.write("=" * 70 + "\n")
@@ -227,34 +154,34 @@ def save_instance(instance, filepath: str = "instance.txt"):
         f.write(f"  Edges : {len(instance.graph.edges)}\n")
         f.write("\n  Node list (id | x | y):\n")
         for nid, attrs in instance.graph.nodes(data=True):
-            f.write(f"    {nid:>4} | x={attrs['x']:.2f} | y={attrs['y']:.2f}\n")
+            f.write(f" {nid:>4} | x={attrs['x']:.2f} | y={attrs['y']:.2f}\n")
         f.write("\n  Edge list (src -> dst | weight):\n")
         for src, dst, attrs in instance.graph.edges(data=True):
-            f.write(f"    {src:>4} -> {dst:<4} | weight={attrs.get('weight', '—')}\n")
+            f.write(f" {src:>4} -> {dst:<4} | weight={attrs.get('weight', '—')}\n")
 
         # time horizon
         f.write("\nTIME\n")
         f.write("-" * 40 + "\n")
         f.write(f"  T_min (longest individual shortest path) : {instance.T_min}\n")
-        f.write(f"  T     (time horizon used for planning)   : {instance.T}\n")
+        f.write(f"  T  (time horizon used for planning)   : {instance.T}\n")
 
         # fleet
         f.write("\nFLEET\n")
         f.write("-" * 40 + "\n")
-        f.write(f"  Number of agents: {instance.fleet.num_agents()}\n\n")
+        f.write(f" Number of agents: {instance.fleet.num_agents()}\n\n")
         f.write(f"  {'ID':>4} | {'Start':>6} | {'Goal':>6} | {'Start (x,y)':>14} | {'Goal (x,y)':>14} | State\n")
         f.write("  " + "-" * 65 + "\n")
         for agent in instance.fleet.agents.values():
             start_attrs = instance.graph.nodes[agent.start]
-            start_xy    = f"({start_attrs['x']:.2f}, {start_attrs['y']:.2f})"
+            start_xy = f"({start_attrs['x']:.2f}, {start_attrs['y']:.2f})"
             if agent.goal is not None:
                 goal_attrs = instance.graph.nodes[agent.goal]
-                goal_xy    = f"({goal_attrs['x']:.2f}, {goal_attrs['y']:.2f})"
-                goal_str   = str(agent.goal)
+                goal_xy  = f"({goal_attrs['x']:.2f}, {goal_attrs['y']:.2f})"
+                goal_str = str(agent.goal)
             else:
-                goal_xy  = "—"
+                goal_xy = "—"
                 goal_str = "—"
-            f.write(f"  {agent.id:>4} | {agent.start:>6} | {goal_str:>6} | {start_xy:>14} | {goal_xy:>14} | {agent.state}\n")
+            f.write(f" {agent.id:>4} | {agent.start:>6} | {goal_str:>6} | {start_xy:>14} | {goal_xy:>14} | {agent.state}\n")
 
 
 def save_simulation(history: list, filepath: str = "simulation_log.txt"):
@@ -269,10 +196,28 @@ def save_simulation(history: list, filepath: str = "simulation_log.txt"):
         f.write(f"  Total timesteps: {len(history) - 1}\n\n")
 
         for snapshot in history:
-            t    = snapshot["timestep"]
+            t  = snapshot["timestep"]
             done = snapshot["done"]
             pos  = snapshot["positions"]
             f.write(f"  t={t:>3}  {'[DONE]' if done else ''}\n")
             for agent_id, node in pos.items():
-                f.write(f"    Agent {agent_id:>3} -> node {node}\n")
+                f.write(f" Agent {agent_id:>3} -> node {node}\n")
             f.write("\n")
+
+
+
+def _format_table(headers: list, rows: list) -> str:
+
+    col_widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            col_widths[i] = max(col_widths[i], len(str(cell)))
+
+    def fmt_row(row):
+        return "  " + "  ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
+
+    separator = "  " + "  ".join("-" * w for w in col_widths)
+    lines     = [fmt_row(headers), separator]
+    for row in rows:
+        lines.append(fmt_row(row))
+    return "\n".join(lines)

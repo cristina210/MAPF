@@ -4,8 +4,6 @@ from fleet import Fleet
 
 
 
-
-
 def make_random_fleet(G: NetworkGraph, num_agents: int = 3) -> Fleet:
     """
     Generate a fleet of agents with unique starts and goals.
@@ -39,4 +37,4 @@ def make_random_fleet(G: NetworkGraph, num_agents: int = 3) -> Fleet:
 
     ids = list(range(num_agents))
 
-    return Fleet(ids=ids, starts=starts, goals=goals)
+    return Fleet(ids=ids, starts=starts, goals=goals)  

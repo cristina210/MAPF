@@ -11,9 +11,9 @@ from MAPF_algorithm.solvers.A_star_naive import AStarNaive
 from shortest_path_algorithm.A_star import a_star
 from results_handler import print_comparison, save_comparison, save_instance, save_simulation
 import random
-#random.seed(27)
-# 27
+
 random.seed(27)
+
 #### Build graph ####
 
 G = make_grid_graph(rows=4, cols=4, step=1.0)

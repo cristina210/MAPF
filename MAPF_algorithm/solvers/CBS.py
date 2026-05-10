@@ -23,28 +23,28 @@ class CBSNode:
     The first conflict-free node extracted is guaranteed to be optimal.
     """
 
-    def __init__(self,vertex_constraints: dict = None,edge_constraints: dict = None,solution: dict = None, parent: "CBSNode" = None):
-        """
-        Args:
-            vertex_constraints: dict {agent_id: set of forbidden expanded node ids}
-            edge_constraints:   dict {agent_id: set of forbidden (src, dst) expanded edge pairs}
-            solution:           dict {agent_id: list of expanded node ids} — empty at creation
-            parent:             parent CBSNode in the constraint tree, None for root
-        """
-        self.vertex_constraints = vertex_constraints if vertex_constraints is not None else {}
-        self.edge_constraints = edge_constraints if edge_constraints is not None else {}
-        self.solution = solution if solution is not None else {}
-        self.parent = parent
-        self.cost = self._compute_cost()
-        self.depth = 0 if parent is None else parent.depth + 1
+    def __init__(self, vertex_constraints=None, edge_constraints=None, solution=None, parent=None, cost_for_each_agent=None):
+            """
+            Args:
+                vertex_constraints: dict {agent_id: set of forbidden expanded node ids}
+                edge_constraints:   dict {agent_id: set of forbidden (src, dst) expanded edge pairs}
+                solution:           dict {agent_id: list of expanded node ids} — empty at creation
+                parent:             parent CBSNode in the constraint tree, None for root
+            """
+            self.vertex_constraints = vertex_constraints if vertex_constraints is not None else {}
+            self.edge_constraints = edge_constraints if edge_constraints is not None else {}
+            self.solution = solution if solution is not None else {}
+            self.parent = parent
+            self.cost_for_each_agent = cost_for_each_agent if cost_for_each_agent is not None else {}
+            self.cost = self._compute_cost() 
+            self.depth = 0 if parent is None else parent.depth + 1
 
 
-    def _compute_cost(self) -> int:
+    def _compute_cost(self) -> float:
         """
-        Sum-of-costs: sum of path lengths across all planned agents.
-        CBS is optimal with respect to this metric.
+        Sum-of-costs: sum of costs of paths of single agent
         """
-        return sum(len(path) for path in self.solution.values())
+        return sum(self.cost_for_each_agent.values())
 
     def __lt__(self, other: "CBSNode") -> bool:
         # required by heapq when two nodes have equal cost in a tuple comparison
@@ -130,14 +130,14 @@ class CBSSolver:
         # root node: no constraints, each agent gets its individual shortest path
         t0 = time.perf_counter()    # stat
         
-        root_solution = self._plan_all_agents(fleet)
+        root_solution, diz_costs_for_agent = self._plan_all_agents(fleet)
         if root_solution is None:
             # at least one agent has no path even without constraints
             return PlanResult(success=False)
 
-        root = CBSNode(solution=root_solution)
+        root = CBSNode(solution=root_solution, cost_for_each_agent = diz_costs_for_agent)
 
-        # min-heap ordered by (cost, counter, node)
+        # min-heap ordered by (cost, node)
         # counter breaks ties deterministically and prevents direct CBSNode comparison
         heap = [root]
 
@@ -168,7 +168,7 @@ class CBSSolver:
                 # add constraints in CBS node
                 child.update_constr_in_node_for_agent(vertex_constr, edge_constr, agent_id)
 
-                new_path = self._plan_single_agent(fleet.get_agent(agent_id), vertex_constraints=child.vertex_constraints[agent_id], edge_constraints=child.edge_constraints[agent_id])
+                new_path, cost_sol = self._plan_single_agent(fleet.get_agent(agent_id), vertex_constraints=child.vertex_constraints[agent_id], edge_constraints=child.edge_constraints[agent_id])
 
                 # if no feasible path exists under the new constraints, skip this child
                 if new_path is None:
@@ -178,8 +178,14 @@ class CBSSolver:
                 new_solution = dict(node.solution)
                 new_solution[agent_id] = new_path
 
+                # update costs 
+                new_costs_diz = dict(node.cost_for_each_agent)
+                new_costs_diz[agent_id] = cost_sol
+
                 child.solution = new_solution
-                # recompute cost now that solution is set
+                child.cost_for_each_agent = new_costs_diz
+
+                # recompute cost
                 child.cost = child._compute_cost()
 
                 self.stats["generated_nodes"] += 1       # stat
@@ -194,7 +200,6 @@ class CBSSolver:
         result.solver_stats = self.stats.copy()
 
         return result
-
 
     def _plan_all_agents(self, fleet: Fleet) -> Optional[dict]:
         """
@@ -211,6 +216,7 @@ class CBSSolver:
         """
         teg = TimeExpandedGraph(self.G_original, self.T)
         solution = {}
+        diz_costs_for_agent = {}
 
         for agent in fleet.agents.values():
             if agent.goal is None:
@@ -219,14 +225,20 @@ class CBSSolver:
             start_exp = teg.get_expanded_id(agent.start, t=0)
             path = a_star(teg.G_expanded, start_exp, agent.goal, extended=True)
 
+            
             if path is None:
-                return None   # no feasible path for this agent
+                return None, None  # no feasible path for this agent
 
-            #print(f"[CBS] Agent {agent.id} - path length (depth): {len(path)}")    # debug
+            # computing costs
+            cost_sol = 0
+            for u, v in zip(path[:-1], path[1:]):
+                cost_sol += teg.G_expanded[u][v]["weight"]  # sum of weights
+
 
             solution[agent.id] = path
+            diz_costs_for_agent[agent.id] = cost_sol
 
-        return solution
+        return solution, diz_costs_for_agent
 
 
     def _plan_single_agent(self, agent, vertex_constraints: set, edge_constraints: set) -> Optional[list]:
@@ -245,7 +257,15 @@ class CBSSolver:
         """
         teg = TimeExpandedGraph(self.G_original, self.T, vertex_constraints, edge_constraints)
         start_exp = teg.get_expanded_id(agent.start, t=0)
-        return a_star(teg.G_expanded, start_exp, agent.goal, extended=True)
+        path = a_star(teg.G_expanded, start_exp, agent.goal, extended=True)
+        if path is None:
+            return None, None
+
+        cost_sol = 0
+        for u, v in zip(path[:-1], path[1:]):
+            cost_sol += teg.G_expanded[u][v]["weight"]
+
+        return path, cost_sol
     
     
     def _detect_conflict(self, solution: dict, fleet: Fleet) -> Optional[tuple]:
@@ -317,7 +337,7 @@ class CBSSolver:
         Returns:
             PlanResult with paths in both expanded and original node ids
         """
-        result = PlanResult(success=True)
+        result = PlanResult(success=True, T=self.T)
         for agent in fleet.agents.values():
             if agent.id not in solution:
                 continue

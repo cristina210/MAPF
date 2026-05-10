@@ -4,72 +4,72 @@
   Total timesteps: 6
 
   t=  0  
-    Agent   0 -> node 15
-    Agent   1 -> node 11
-    Agent   2 -> node 4
-    Agent   3 -> node 13
-    Agent   4 -> node 3
-    Agent   5 -> node 1
-    Agent   6 -> node 10
-    Agent   7 -> node 12
+ Agent   0 -> node 15
+ Agent   1 -> node 11
+ Agent   2 -> node 4
+ Agent   3 -> node 13
+ Agent   4 -> node 3
+ Agent   5 -> node 1
+ Agent   6 -> node 10
+ Agent   7 -> node 12
 
   t=  1  
-    Agent   0 -> node 11
-    Agent   1 -> node 7
-    Agent   2 -> node 5
-    Agent   3 -> node 14
-    Agent   4 -> node 2
-    Agent   5 -> node 0
-    Agent   6 -> node 9
-    Agent   7 -> node 8
+ Agent   0 -> node 11
+ Agent   1 -> node 7
+ Agent   2 -> node 5
+ Agent   3 -> node 14
+ Agent   4 -> node 2
+ Agent   5 -> node 0
+ Agent   6 -> node 9
+ Agent   7 -> node 8
 
   t=  2  
-    Agent   0 -> node 10
-    Agent   1 -> node 6
-    Agent   2 -> node 9
-    Agent   3 -> node 14
-    Agent   4 -> node 2
-    Agent   5 -> node 0
-    Agent   6 -> node 13
-    Agent   7 -> node 4
+ Agent   0 -> node 10
+ Agent   1 -> node 6
+ Agent   2 -> node 9
+ Agent   3 -> node 14
+ Agent   4 -> node 2
+ Agent   5 -> node 0
+ Agent   6 -> node 13
+ Agent   7 -> node 4
 
   t=  3  
-    Agent   0 -> node 9
-    Agent   1 -> node 5
-    Agent   2 -> node 9
-    Agent   3 -> node 10
-    Agent   4 -> node 2
-    Agent   5 -> node 0
-    Agent   6 -> node 14
-    Agent   7 -> node 4
+ Agent   0 -> node 9
+ Agent   1 -> node 5
+ Agent   2 -> node 9
+ Agent   3 -> node 10
+ Agent   4 -> node 2
+ Agent   5 -> node 0
+ Agent   6 -> node 14
+ Agent   7 -> node 4
 
   t=  4  
-    Agent   0 -> node 8
-    Agent   1 -> node 5
-    Agent   2 -> node 9
-    Agent   3 -> node 6
-    Agent   4 -> node 2
-    Agent   5 -> node 0
-    Agent   6 -> node 14
-    Agent   7 -> node 5
+ Agent   0 -> node 8
+ Agent   1 -> node 5
+ Agent   2 -> node 9
+ Agent   3 -> node 6
+ Agent   4 -> node 2
+ Agent   5 -> node 0
+ Agent   6 -> node 14
+ Agent   7 -> node 5
 
   t=  5  
-    Agent   0 -> node 8
-    Agent   1 -> node 5
-    Agent   2 -> node 9
-    Agent   3 -> node 6
-    Agent   4 -> node 2
-    Agent   5 -> node 0
-    Agent   6 -> node 14
-    Agent   7 -> node 6
+ Agent   0 -> node 8
+ Agent   1 -> node 5
+ Agent   2 -> node 9
+ Agent   3 -> node 6
+ Agent   4 -> node 2
+ Agent   5 -> node 0
+ Agent   6 -> node 14
+ Agent   7 -> node 6
 
   t=  6  [DONE]
-    Agent   0 -> node 8
-    Agent   1 -> node 5
-    Agent   2 -> node 9
-    Agent   3 -> node 6
-    Agent   4 -> node 2
-    Agent   5 -> node 0
-    Agent   6 -> node 14
-    Agent   7 -> node 7
+ Agent   0 -> node 8
+ Agent   1 -> node 5
+ Agent   2 -> node 9
+ Agent   3 -> node 6
+ Agent   4 -> node 2
+ Agent   5 -> node 0
+ Agent   6 -> node 14
+ Agent   7 -> node 7
 

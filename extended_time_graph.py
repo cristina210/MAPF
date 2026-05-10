@@ -140,7 +140,6 @@ class TimeExpandedGraph:
         self.edge_constraints = create_edges_constraints(self.swap_pairs, edge_constraints or set()) 
         self.G_expanded = time_expansion_graph_with_constr(self.G_original, self.T, self.old_id_to_new,self.vertex_constraints, self.edge_constraints)
 
-
     
     def update_teg_with_adding_constraints(self, new_vertex_constr, new_edge_constr) -> None:
         """

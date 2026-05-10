@@ -40,7 +40,7 @@ class PrioritizedPlanner:
         self.stats["failed_agents"] = fleet.num_agents()
         t0 = time.perf_counter()
         self.teg = TimeExpandedGraph(self.G_original, self.T)
-        result   = PlanResult(success=True)
+        result   = PlanResult(success=True,T=self.T)
 
         for agent in fleet.agents.values():
 

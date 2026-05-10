@@ -116,6 +116,7 @@ def a_star_with_focal_search(G: NetworkGraph, start: int, goal: int, congestion_
         passing through each node in the current CT solution. Used to compute g_c incrementally during expansion.
         extended: if True, uses time-expanded graph logic
         heuristic: spatial heuristic h(G, node, goal_ref) (default: h_manhattan)
+        conflict_heuristic: heuristic for congestion use for ordering of FOCAL
         w: suboptimality factor.
         w=1  -> optimal (FOCAL = f_min nodes only).
         w>1  -> bounded suboptimal (cost <= w * C*), faster.

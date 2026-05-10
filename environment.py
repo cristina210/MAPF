@@ -74,7 +74,6 @@ class MAPFEnvironment:
         """
         assert plan_result.success, "Impossible to follow the plan"
 
-
         # Check il all agent with a goal should have a plan
         for agent in self.instance.fleet.agents.values():
             if agent.goal is None:
