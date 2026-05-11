@@ -1,7 +1,7 @@
 from graph_utils.upload_graph import make_grid_graph
 from graph_utils.graph_visualization import plot_graph, animate_paths
 from graph_utils.graph_analysis import precomputed_shortest_path_A_star
-from fleet import make_random_fleet
+from fleet_utils.upload_fleet import make_random_fleet
 from instance import MAPFInstance
 from environment import MAPFEnvironment
 from MAPF_algorithm.solvers.PP import PrioritizedPlanner
@@ -144,7 +144,7 @@ save_instance(instance,filepath="results/instance.txt")
 save_simulation(history_PP,filepath="results/simulation_PP.txt")
 save_simulation(history_CBS,filepath="results/simulation_CBS.txt")
 # Visualization
-#animate_paths(G, result_CBS, "CBS")
-#animate_paths(G, result_PP, "PP")
+animate_paths(G, result_CBS, "CBS")
+animate_paths(G, result_PP, "PP")
 
 

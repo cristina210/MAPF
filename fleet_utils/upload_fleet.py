@@ -2,39 +2,25 @@ import random
 from Network_graph import NetworkGraph  # o dal path corretto
 from fleet import Fleet
 
-
-
 def make_random_fleet(G: NetworkGraph, num_agents: int = 3) -> Fleet:
     """
-    Generate a fleet of agents with unique starts and goals.
-    Each goal is sampled avoiding:
-    - all start nodes
-    - already assigned goals
-    - its own start node
-    """
+    Generate a fleet of agents with initial position and goals chosen from nodes of a graph.
+    Start e goal are guaranteed to be different between agents.
 
+    Args:
+        G:          graph
+        num_agents: number of agents to generate
+    Returns:
+        Object fleet
+    """
     all_nodes = list(G.nodes)
 
-    # 1. sample unique starts
     starts = random.sample(all_nodes, num_agents)
 
-    available_goals = set(all_nodes)
-    available_goals -= set(starts)
+    remaining = list(set(all_nodes) - set(starts))
+    goals = random.sample(remaining, num_agents)
 
-    goals = []
-
-    for start in starts:
-        # exclude own start + already assigned goals
-        candidates = list(available_goals - {start})
-
-        if not candidates:
-            raise ValueError("Not enough nodes to assign unique goals")
-
-        goal = random.choice(candidates)
-
-        goals.append(goal)
-        #available_goals.remove(goal)
-
+    # Ids are generated from 0 to num agents - 1
     ids = list(range(num_agents))
 
-    return Fleet(ids=ids, starts=starts, goals=goals)  
+    return Fleet(ids=ids, starts=starts, goals=goals)

@@ -24,77 +24,70 @@ class MAPFInstance:
         self.name = name
         # compute T min as the longest shortest path
         self.T_min = self._compute_T_min()
-        self.T = self.T_min + self.fleet.num_agents() + round(len(self.graph.edges)/(len(self.graph.edges) - self.fleet.num_agents()))
+
+        delta_edges_num_agents = len(self.graph.edges) - self.fleet.num_agents()
+        congestion_term = round(len(self.graph.edges) / delta_edges_num_agents) if delta_edges_num_agents > 0 else self.fleet.num_agents()
+        self.T = self.T_min + self.fleet.num_agents() + congestion_term 
 
         self._validate()
     
 
     def _compute_T_min(self) -> int:
-        """
-        Calcola il T minimo come la lunghezza del cammino più lungo
-        tra tutti gli agenti (ognuno calcolato sul grafo originale con A*).
-        Un agente idle (goal=None) non contribuisce al calcolo.
-
-        Returns:
-            lunghezza massima dei cammini minimi tra tutti gli agenti attivi
-        """
+        ''' Compute makespan if each agent plan its shortest path neglecting conflicts with others'''
+        self._shortest_paths = {}   # cache riusata in _validate
         max_len = 0
         for a in self.fleet.agents.values():
             if a.goal is None:
                 continue
             path = a_star(self.graph, a.start, a.goal)
             if path is None:
-                raise ValueError(
-                    f"Agent {a.id}: no path from start={a.start} to goal={a.goal}. "
-                )
-            max_len = max(max_len, len(path)-1)
+                raise ValueError(f"Agent {a.id}: no path from {a.start} to {a.goal}")
+            self._shortest_paths[a.id] = path
+            max_len = max(max_len, len(path) - 1)
         return max_len
 
     def _validate(self) -> None:
         """
-        # diventa utile soprattutto quando si legge da file flotta e grafo
-        Verified if the instance is consistent:
-        - start and goal related to each agent exists on the graph
-        - No agent share the same starting node
-        - Should not be too small: at least equal to the time to pursue the longest shortest path
+        Checks instance consistency. Most useful when graph and fleet are loaded
+        from external files.
+        Checks:
+        - Graph has strictly more nodes than agents 
+        - Every agent's start and goal exist in the graph
+        - No two agents share the same start node
+        - A path exists from start to goal for every active agent
+        - T is large enough for every active agent to reach its goal (if considered each path indipendently)
         """
         all_nodes = set(self.graph.nodes)
-        starts    = []
 
-        if len(self.graph.nodes) <= self.fleet.num_agents():
-            raise ValueError(f"Too many agents on the graph")
+        # graph capacity 
+        if len(all_nodes) <= self.fleet.num_agents():
+            raise ValueError(f"Graph has {len(all_nodes)} nodes but {self.fleet.num_agents()} agents: " "not enough nodes to assign unique start positions." )
 
-        # start and goal exist in the graph
+        # per-agent node existence + start uniqueness 
+        starts = []
         for a in self.fleet.agents.values():
             if a.start not in all_nodes:
-                raise ValueError(f"Agent {a.id}: start {a.start} doesn't exist on the graph")
+                raise ValueError(f"Agent {a.id}: start node {a.start} not in graph.")
             if a.goal is not None and a.goal not in all_nodes:
-                raise ValueError(f"Agent {a.id}: goal {a.goal} doesn't exist on the graph")
+                raise ValueError(f"Agent {a.id}: goal node {a.goal} not in graph.")
             starts.append(a.start)
 
-        # no agent share the same starting node
         if len(starts) != len(set(starts)):
-            raise ValueError("Two or more agents share the same starting node")
- 
-        # Check on T
+            raise ValueError("Two or more agents share the same start node.")
+
+        # path existence + T check 
         for a in self.fleet.agents.values():
             if a.goal is None:
                 continue
-            shortest = a_star(self.graph, a.start, a.goal, extended=False)
-            if shortest is None:
-                raise ValueError(
-                    f"Agent {a.id}: no path exists from start={a.start} to goal={a.goal} in the graph"
-                )
-            min_steps = len(shortest) - 1   # number of edges = timesteps needed
+
+            path = self._shortest_paths.get(a.id)
+            if path is None:
+                raise ValueError( f"Agent {a.id}: no path from start={a.start} to goal={a.goal}." )
+
+            min_steps = len(path) - 1
             if self.T <= min_steps:
-                raise ValueError( f"Agent {a.id}: T={self.T} is too small — at least {min_steps + 1} timesteps "
-                    f"are needed to reach goal={a.goal} from start={a.start}. ")
+                raise ValueError(f"Agent {a.id}: T={self.T} is too small — need at least " f"{min_steps + 1} timesteps to reach goal={a.goal} " f"from start={a.start}.")
+
 
     def num_agents(self) -> int:
         return self.fleet.num_agents()
-
-    def __repr__(self) -> str:
-        return (f"MAPFInstance(name={self.name}, "
-                f"nodes={len(self.graph.nodes)}, "
-                f"agents={self.num_agents()}, "
-                f"T={self.T})")

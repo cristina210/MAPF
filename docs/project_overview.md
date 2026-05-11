@@ -289,3 +289,7 @@ MAPF/
 └── main.py                           # entry point
 ```
 
+### Bibliography:
+Multi-Agent Path Finding – An Overview - Roni Stern
+Suboptimal Variants of the Conflict-Based Search Algorithm for the Multi-Agent Pathfinding Problem - Max Barer, Guni Sharon, Roni Stern, Ariel Felner
+
