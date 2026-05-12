@@ -17,8 +17,8 @@ Since agents move on a discrete graph, time is also treated as discrete: one edg
 To handle waiting actions and time-dependent conflicts, a **Time-Expanded Graph (TEG)** is constructed — see the dedicated section below.
 
 The objective function used in this project is the **Sum of Costs**: the sum of individual path costs across all agents, where:
-- **Move cost**: the weight of the traversed edge, defined in the graph and stored in the TEG.
-- **Wait cost**: defined in `time_graph_builder.py / time_expansion_graph_with_constr`. Default value is `1` per timestep.
+- **Move cost**: the weight of the traversed edge, defined in the graph during the uploading and stored in the TEG.
+- **Wait cost**: defined internally in `time_graph_builder.py / time_expansion_graph_with_constr`. Default value is `1` per timestep.
 
 ---
 
@@ -26,7 +26,7 @@ The objective function used in this project is the **Sum of Costs**: the sum of 
 
 ### Graph — `NetworkGraph`
 
-The graph is implemented as a directed graph using the `NetworkX` library (`nx.DiGraph`), wrapped in a custom `NetworkGraph` class.
+The graph is implemented as a directed graph using the `NetworkX` library (`nx.DiGraph`).
 By default each node stores:
 - A unique integer `id`
 - Spatial coordinates `x`, `y`
@@ -177,7 +177,7 @@ A* guides the search from start to goal using two components:
 Available heuristics (passed via the `heuristic` parameter):
 - `h_manhattan` (default): Manhattan distance — optimal for orthogonal grids with unit weights.
 - `h_euclidean`: Euclidean distance — admissible only if edge weights equal spatial distances.
-Note: the optimality of solution depends on the type of heuristic, graph and type of cost (for using Manhattan or Euclidean cost of traversing an edge should be related to edge lenght).
+Note: the optimality of solution depends on the type of heuristic, graph and type of cost (for using Manhattan or Euclidean, cost of traversing an edge should be related to edge lenght).
 
 ### Focal A* — `a_star_with_focal_search`
 
@@ -224,8 +224,7 @@ CBS is a two-level algorithm:
 2. At each iteration, the lowest-cost CT node is expanded.
 3. If the solution is conflict-free, it is returned (optimality guaranteed by best-first).
 4. Otherwise, the first detected conflict is resolved by splitting the node into two children — one adding a constraint for each of the two conflicting agents.
-**Low level** — for each agent, a new TEG is built with that agent's constraints and standard A* is run to find the shortest feasible path. CBS is optimal, complete but can suffer 
-high computational cost.
+**Low level** — for each agent, a new TEG is built with that agent's constraints and standard A* is run to find the shortest feasible path. CBS is optimal, complete but can suffer high computational cost.
 
 ```python
 planner = CBSSolver(instance.graph, instance.T)

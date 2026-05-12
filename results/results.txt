@@ -108,12 +108,12 @@
 ======================================================================
 
   A* Naive:
- Runtime sec                        : 0.00025290000485256314
+ Runtime sec                        : 0.0012327000149525702
  Planned agents                     : 8
  Failed agents                      : 0
 
   PP:
- Runtime sec                        : 0.016313500003889203
+ Runtime sec                        : 0.04182719998061657
  Planned agents                     : 8
  Failed agents                      : 0
  Vertex constraints added           : 32
@@ -123,19 +123,19 @@
  Expanded nodes                     : 25
  Generated nodes                    : 48
  Max tree depth                     : 8
- Runtime sec                        : 0.06356089998735115
+ Runtime sec                        : 0.07561669999267906
  Max heap size                      : 25
 
   BCBS w_l=10, w_h=1:
  Expanded nodes                     : 4
  Generated nodes                    : 6
  Max tree depth                     : 2
- Runtime sec                        : 0.007577400014270097
+ Runtime sec                        : 0.010206200007814914
  Max heap size                      : 4
 
   BCBS w_l=1, w_h=1:
  Expanded nodes                     : 6
  Generated nodes                    : 10
  Max tree depth                     : 4
- Runtime sec                        : 0.02178969996748492
+ Runtime sec                        : 0.037072000035550445
  Max heap size                      : 6
